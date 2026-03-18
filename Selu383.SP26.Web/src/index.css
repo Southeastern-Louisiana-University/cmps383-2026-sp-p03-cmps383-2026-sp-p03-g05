@@ -1,11 +1,9 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'DM Sans', 'Segoe UI', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color: var(--coffee-text, #5b3f32);
+  background: var(--coffee-bg, #fbf3e8);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,56 +11,70 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, #ffffffa0, transparent 46%),
+    linear-gradient(160deg, var(--coffee-bg, #fbf3e8), #f4eadc);
+  color: var(--coffee-text, #5b3f32);
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
 button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  font: inherit;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
+#root {
+  min-height: 100vh;
+}
+
+.btn {
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 0.7rem 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--coffee-primary, #10b981);
+  color: var(--coffee-bg, #fbf3e8);
+  box-shadow: 0 8px 24px #10b98133;
+}
+
+.btn-secondary {
+  background: var(--coffee-accent, #cbbba0);
+  color: var(--coffee-dark, #3a2f24);
+  border-color: #b8a48b;
+}
+
+.chip {
+  border-radius: 999px;
+  border: 1px solid #bda98f;
+  background: #fff8ee;
+  padding: 0.38rem 0.7rem;
+  font-size: 0.85rem;
+  color: var(--coffee-dark, #3a2f24);
+}
+
+@media (max-width: 640px) {
+  .btn {
+    width: 100%;
   }
 }
