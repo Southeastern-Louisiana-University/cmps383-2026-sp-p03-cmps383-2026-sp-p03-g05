@@ -63,10 +63,12 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.badgeRow}>
-        <View style={styles.badge}>
+        <Pressable
+          style={({ pressed }) => [styles.badge, pressed && styles.badgePressed]}
+          onPress={() => router.push('/(auth)/fast-pickup')}>
           <Coffee color={BrandColors.darkAccent} size={16} />
           <ThemedText style={styles.badgeText}>Fast Pickup</ThemedText>
-        </View>
+        </Pressable>
         <View style={styles.badge}>
           <Leaf color={BrandColors.primary} size={16} />
           <ThemedText style={styles.badgeText}>Eco Friendly</ThemedText>
@@ -153,6 +155,9 @@ const styles = StyleSheet.create({
     borderColor: BrandColors.accent,
     borderRadius: 999,
     paddingVertical: 10,
+  },
+  badgePressed: {
+    opacity: 0.82,
   },
   badgeText: {
     color: BrandColors.text,

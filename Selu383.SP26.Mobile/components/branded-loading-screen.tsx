@@ -5,11 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BrandColors } from '@/constants/theme';
 
-type BrandedLoadingScreenProps = {
-  message?: string;
-};
-
-export function BrandedLoadingScreen({ message = 'Preparing your coffee app...' }: BrandedLoadingScreenProps) {
+export function BrandedLoadingScreen() {
   return (
     <ThemedView style={styles.screen}>
       <View style={styles.logoWrap}>
@@ -17,11 +13,10 @@ export function BrandedLoadingScreen({ message = 'Preparing your coffee app...' 
       </View>
 
       <ThemedText type="subtitle" style={styles.title}>
-        Emerald Coffee
+        Caffeinated Lions
       </ThemedText>
 
       <ActivityIndicator color={BrandColors.primary} size="small" />
-      <ThemedText style={styles.message}>{message}</ThemedText>
     </ThemedView>
   );
 }
@@ -50,10 +45,5 @@ const styles = StyleSheet.create({
   },
   title: {
     color: BrandColors.darkAccent,
-  },
-  message: {
-    color: BrandColors.text,
-    textAlign: 'center',
-    opacity: 0.85,
   },
 });

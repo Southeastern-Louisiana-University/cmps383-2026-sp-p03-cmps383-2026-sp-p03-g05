@@ -7,7 +7,7 @@ export default function RootIndex() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return <BrandedLoadingScreen message="Checking your session..." />;
+    return <BrandedLoadingScreen />;
   }
 
   return <Redirect href={isAuthenticated ? '/(app)' : '/(auth)/login'} />;

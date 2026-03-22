@@ -8,7 +8,7 @@ export default function AppLayout() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return <BrandedLoadingScreen message="Loading your dashboard..." />;
+    return <BrandedLoadingScreen />;
   }
 
   if (!isAuthenticated) {
@@ -26,7 +26,7 @@ export default function AppLayout() {
           backgroundColor: BrandColors.secondary,
         },
       }}>
-      <Stack.Screen name="index" options={{ title: 'Emerald Coffee' }} />
+      <Stack.Screen name="index" options={{ title: 'Caffeinated Lions' }} />
     </Stack>
   );
 }
