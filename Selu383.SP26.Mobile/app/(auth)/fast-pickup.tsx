@@ -41,6 +41,7 @@ export default function FastPickupScreen() {
   const [customerName, setCustomerName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [customerLookupStatus, setCustomerLookupStatus] = useState<'idle' | 'loading' | 'matched'>('idle');
+  const [selectedReturningOrderIndex, setSelectedReturningOrderIndex] = useState<number | null>(null);
   const [activeDrink, setActiveDrink] = useState<MenuItem | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<Partial<Record<MenuItem, string>>>({});
   const [selectedLocation, setSelectedLocation] = useState<StoreOption>(storeOptions[0]);
@@ -76,6 +77,9 @@ export default function FastPickupScreen() {
       if (customerLookupStatus !== 'idle') {
         setCustomerLookupStatus('idle');
       }
+      if (selectedReturningOrderIndex !== null) {
+        setSelectedReturningOrderIndex(null);
+      }
 
       return;
     }
@@ -90,7 +94,7 @@ export default function FastPickupScreen() {
       setCustomerLookupStatus('matched');
       lookupTimerRef.current = null;
     }, 2000);
-  }, [customerLookupStatus, customerName, phoneNumber]);
+  }, [customerLookupStatus, customerName, phoneNumber, selectedReturningOrderIndex]);
 
   const closeSizeModal = () => setActiveDrink(null);
   const closeLocationModal = () => setIsLocationModalVisible(false);
@@ -233,17 +237,21 @@ export default function FastPickupScreen() {
 
         {customerLookupStatus === 'matched' ? (
           <View style={styles.returningSection}>
-            <ThemedText style={styles.returningMessage}>
-              Welcome Back Dom Gendusa. Would you like to order another:
-            </ThemedText>
-            <View style={styles.returningOrderList}>
+            <ThemedText style={styles.returningHeading}>Welcome Back Dom!</ThemedText>
+            <ThemedText style={styles.returningMessage}>Would you like to order another:</ThemedText>
+            <View style={styles.returningOrderGrid}>
               {returningOrderOptions.map((item, index) => (
                 <Pressable
                   key={`${item}-${index}`}
-                  style={({ pressed }) => [styles.returningOrderButton, pressed && styles.returningOrderButtonPressed]}
-                  onPress={() => placeOrder(true)}
+                  style={({ pressed }) => [
+                    styles.returningOrderCard,
+                    selectedReturningOrderIndex === index && styles.returningOrderCardSelected,
+                    pressed && styles.returningOrderCardPressed,
+                  ]}
+                  onPress={() => setSelectedReturningOrderIndex(index)}
                   disabled={isPlacingOrder}>
-                  <ThemedText style={styles.returningOrderText}>{item}</ThemedText>
+                  <Image source={require('@/assets/images/Coffee Cup.png')} style={styles.returningOrderIcon} contentFit="contain" />
+                  <ThemedText style={styles.returningOrderLabel}>{item}</ThemedText>
                 </Pressable>
               ))}
             </View>
@@ -264,7 +272,7 @@ export default function FastPickupScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.orderButton, pressed && styles.orderButtonPressed]}
-            onPress={() => placeOrder()}
+            onPress={() => placeOrder(selectedReturningOrderIndex !== null)}
             disabled={isPlacingOrder}>
             <ThemedText style={styles.orderButtonText}>Place Order!</ThemedText>
           </Pressable>
@@ -475,26 +483,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     gap: 10,
   },
-  returningMessage: {
+  returningHeading: {
     color: BrandColors.darkAccent,
     fontWeight: '700',
+    textAlign: 'center',
   },
-  returningOrderList: {
-    gap: 8,
+  returningMessage: {
+    color: BrandColors.darkAccent,
+    fontWeight: '600',
+    textAlign: 'left',
+    alignSelf: 'stretch',
   },
-  returningOrderButton: {
+  returningOrderGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  returningOrderCard: {
+    width: '31%',
     borderWidth: 1,
     borderColor: BrandColors.accent,
-    borderRadius: 10,
+    borderRadius: 12,
+    minHeight: 118,
     paddingVertical: 10,
-    paddingHorizontal: 10,
-    backgroundColor: BrandColors.secondary,
+    paddingHorizontal: 6,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  returningOrderButtonPressed: {
-    opacity: 0.82,
+  returningOrderCardPressed: {
+    opacity: 0.86,
   },
-  returningOrderText: {
+  returningOrderCardSelected: {
+    borderColor: BrandColors.primary,
+    backgroundColor: '#ecfff6',
+  },
+  returningOrderIcon: {
+    width: 42,
+    height: 42,
+    marginBottom: 8,
+  },
+  returningOrderLabel: {
     color: BrandColors.darkAccent,
+    textAlign: 'center',
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '600',
   },
   locationButton: {

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { Redirect, Tabs, router } from 'expo-router';
-import { CalendarCheck2, House, Menu, User } from 'lucide-react-native';
+import { CalendarCheck2, House, User, Utensils } from 'lucide-react-native';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BrandedLoadingScreen } from '@/components/branded-loading-screen';
@@ -11,7 +11,7 @@ import { BrandColors } from '@/constants/theme';
 function AppBanner() {
   return (
     <View style={styles.banner}>
-      <Image source={require('@/assets/images/logo.png')} style={styles.bannerLogo} contentFit="contain" />
+      <Image source={require('@/assets/images/logo-round.png')} style={styles.bannerLogo} contentFit="contain" />
       <Pressable style={({ pressed }) => [styles.orderBadge, pressed && styles.orderBadgePressed]} onPress={() => router.push('/(auth)/fast-pickup')}>
         <Image source={require('@/assets/images/Coffee Cup.png')} style={styles.orderBadgeIcon} contentFit="contain" />
         <ThemedText style={styles.orderBadgeText}>Order</ThemedText>
@@ -39,6 +39,19 @@ export default function AppLayout() {
         tabBarInactiveTintColor: BrandColors.primary,
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabLabel,
+        tabBarButton: ({ style, children, onPress, onLongPress, accessibilityState, accessibilityLabel, testID }) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={accessibilityState}
+            accessibilityLabel={accessibilityLabel}
+            testID={testID}
+            onPress={onPress}
+            onLongPress={onLongPress}
+            android_ripple={{ color: '#d9f7e8' }}
+            style={({ pressed }) => [style, styles.tabButton, pressed && styles.tabButtonPressed]}>
+            {children}
+          </Pressable>
+        ),
         sceneStyle: {
           backgroundColor: BrandColors.secondary,
         },
@@ -60,7 +73,7 @@ export default function AppLayout() {
         name="menu"
         options={{
           title: 'Menu',
-          tabBarIcon: ({ size }) => <Menu color={BrandColors.primary} size={size} />,
+          tabBarIcon: ({ size }) => <Utensils color={BrandColors.primary} size={size} />,
         }}
       />
       <Tabs.Screen
@@ -87,7 +100,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: BrandColors.accent,
     paddingHorizontal: 18,
-    paddingTop: 16,
+    paddingTop: 40,
     paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -127,6 +140,15 @@ const styles = StyleSheet.create({
     height: 74,
     paddingTop: 8,
     paddingBottom: 10,
+  },
+  tabButton: {
+    borderRadius: 12,
+    marginHorizontal: 4,
+    marginTop: 2,
+  },
+  tabButtonPressed: {
+    backgroundColor: '#ecfff6',
+    opacity: 0.86,
   },
   tabLabel: {
     fontWeight: '600',
