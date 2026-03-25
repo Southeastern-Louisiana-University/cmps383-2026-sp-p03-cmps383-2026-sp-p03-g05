@@ -10,11 +10,15 @@ import { BrandColors } from '@/constants/theme';
 
 const menuItems = ['Americano/Drip', 'Latte', 'Cappuccino', 'Iced Latte', 'Iced Coffee', 'Hot Tea'] as const;
 const sizeOptions = ['12oz', '16oz', '20 oz'] as const;
+const returningOrderOptions = ['20 oz Vanilla Late', '16oz Americano', '20 oz Vanilla Late'] as const;
 const storeOptions = [
   '123 Lion Way, Hammond LA',
   '456 Seattle Row, Seattle WA',
   '789 5th Ave, New York NY',
 ] as const;
+const matchingCustomerName = 'Dom Gendusa';
+const matchingPhoneNumber = '985-320-2633';
+const matchSuccessColor = '#2f9e44';
 
 type MenuItem = (typeof menuItems)[number];
 type StoreOption = (typeof storeOptions)[number];
@@ -36,6 +40,7 @@ function formatPhoneNumber(value: string) {
 export default function FastPickupScreen() {
   const [customerName, setCustomerName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [customerLookupStatus, setCustomerLookupStatus] = useState<'idle' | 'loading' | 'matched'>('idle');
   const [activeDrink, setActiveDrink] = useState<MenuItem | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<Partial<Record<MenuItem, string>>>({});
   const [selectedLocation, setSelectedLocation] = useState<StoreOption>(storeOptions[0]);
@@ -43,6 +48,7 @@ export default function FastPickupScreen() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const orderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneInputRef = useRef<TextInput | null>(null);
 
   useEffect(() => {
@@ -50,8 +56,41 @@ export default function FastPickupScreen() {
       if (orderTimerRef.current) {
         clearTimeout(orderTimerRef.current);
       }
+
+      if (lookupTimerRef.current) {
+        clearTimeout(lookupTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    const hasMatchingCustomer =
+      customerName.trim() === matchingCustomerName && phoneNumber.trim() === matchingPhoneNumber;
+
+    if (!hasMatchingCustomer) {
+      if (lookupTimerRef.current) {
+        clearTimeout(lookupTimerRef.current);
+        lookupTimerRef.current = null;
+      }
+
+      if (customerLookupStatus !== 'idle') {
+        setCustomerLookupStatus('idle');
+      }
+
+      return;
+    }
+
+    if (customerLookupStatus !== 'idle') {
+      return;
+    }
+
+    setCustomerLookupStatus('loading');
+    // TODO: A backend API call should be made here instead of the simulated timeout.
+    lookupTimerRef.current = setTimeout(() => {
+      setCustomerLookupStatus('matched');
+      lookupTimerRef.current = null;
+    }, 2000);
+  }, [customerLookupStatus, customerName, phoneNumber]);
 
   const closeSizeModal = () => setActiveDrink(null);
   const closeLocationModal = () => setIsLocationModalVisible(false);
@@ -82,7 +121,11 @@ export default function FastPickupScreen() {
     }
   };
 
-  const placeOrder = () => {
+  const placeOrder = (returnToLogin = false) => {
+    if (isPlacingOrder) {
+      return;
+    }
+
     setIsPlacingOrder(true);
 
     if (orderTimerRef.current) {
@@ -91,7 +134,13 @@ export default function FastPickupScreen() {
 
     orderTimerRef.current = setTimeout(() => {
       setIsPlacingOrder(false);
-      setIsSuccessModalVisible(true);
+
+      if (returnToLogin) {
+        router.replace('/(auth)/login');
+      } else {
+        setIsSuccessModalVisible(true);
+      }
+
       orderTimerRef.current = null;
     }, 1200);
   };
@@ -99,6 +148,18 @@ export default function FastPickupScreen() {
   const closeSuccessModal = () => {
     setIsSuccessModalVisible(false);
     router.replace('/(auth)/login');
+  };
+
+  const renderCustomerLookupIndicator = () => {
+    if (customerLookupStatus === 'idle') {
+      return null;
+    }
+
+    if (customerLookupStatus === 'loading') {
+      return <ActivityIndicator color={BrandColors.primary} size="small" />;
+    }
+
+    return <CheckCircle2 color={matchSuccessColor} size={18} />;
   };
 
   return (
@@ -117,25 +178,39 @@ export default function FastPickupScreen() {
         </ThemedText>
 
         <View style={styles.form}>
-          <TextInput
-            value={customerName}
-            onChangeText={setCustomerName}
-            placeholder="Enter your name"
-            placeholderTextColor={BrandColors.darkAccent}
-            style={styles.input}
-            autoCapitalize="words"
-          />
-          <TextInput
-            value={phoneNumber}
-            ref={phoneInputRef}
-            onChangeText={onPhoneNumberChange}
-            placeholder="Enter your phone number"
-            placeholderTextColor={BrandColors.darkAccent}
-            style={styles.input}
-            keyboardType="phone-pad"
-            maxLength={12}
-          />
-          {/* ADD BACKEND LOGIC TO CHECK FOR CURRENT CUSTOMERS. */}
+          <View style={styles.inputWrapper}>
+            <TextInput
+              value={customerName}
+              onChangeText={setCustomerName}
+              placeholder="Enter your name"
+              placeholderTextColor={BrandColors.darkAccent}
+              style={[styles.input, customerLookupStatus !== 'idle' && styles.inputWithIndicator]}
+              autoCapitalize="words"
+            />
+            {customerLookupStatus !== 'idle' ? (
+              <View pointerEvents="none" style={styles.inputIndicator}>
+                {renderCustomerLookupIndicator()}
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.inputWrapper}>
+            <TextInput
+              value={phoneNumber}
+              ref={phoneInputRef}
+              onChangeText={onPhoneNumberChange}
+              placeholder="Enter your phone number"
+              placeholderTextColor={BrandColors.darkAccent}
+              style={[styles.input, customerLookupStatus !== 'idle' && styles.inputWithIndicator]}
+              keyboardType="phone-pad"
+              maxLength={12}
+            />
+            {customerLookupStatus !== 'idle' ? (
+              <View pointerEvents="none" style={styles.inputIndicator}>
+                {renderCustomerLookupIndicator()}
+              </View>
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.menuGrid}>
@@ -156,6 +231,25 @@ export default function FastPickupScreen() {
           ))}
         </View>
 
+        {customerLookupStatus === 'matched' ? (
+          <View style={styles.returningSection}>
+            <ThemedText style={styles.returningMessage}>
+              Welcome Back Dom Gendusa. Would you like to order another:
+            </ThemedText>
+            <View style={styles.returningOrderList}>
+              {returningOrderOptions.map((item, index) => (
+                <Pressable
+                  key={`${item}-${index}`}
+                  style={({ pressed }) => [styles.returningOrderButton, pressed && styles.returningOrderButtonPressed]}
+                  onPress={() => placeOrder(true)}
+                  disabled={isPlacingOrder}>
+                  <ThemedText style={styles.returningOrderText}>{item}</ThemedText>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.orderSection}>
           <Pressable
             style={({ pressed }) => [styles.locationButton, pressed && styles.locationButtonPressed]}
@@ -170,7 +264,7 @@ export default function FastPickupScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.orderButton, pressed && styles.orderButtonPressed]}
-            onPress={placeOrder}
+            onPress={() => placeOrder()}
             disabled={isPlacingOrder}>
             <ThemedText style={styles.orderButtonText}>Place Order!</ThemedText>
           </Pressable>
@@ -300,6 +394,9 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 18,
   },
+  inputWrapper: {
+    position: 'relative',
+  },
   input: {
     borderWidth: 1,
     borderColor: BrandColors.accent,
@@ -308,6 +405,17 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     backgroundColor: '#fff',
     color: BrandColors.darkAccent,
+  },
+  inputWithIndicator: {
+    paddingRight: 42,
+  },
+  inputIndicator: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   menuGrid: {
     flexDirection: 'row',
@@ -356,6 +464,38 @@ const styles = StyleSheet.create({
   orderSection: {
     marginTop: 24,
     gap: 12,
+  },
+  returningSection: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  returningMessage: {
+    color: BrandColors.darkAccent,
+    fontWeight: '700',
+  },
+  returningOrderList: {
+    gap: 8,
+  },
+  returningOrderButton: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: BrandColors.secondary,
+  },
+  returningOrderButtonPressed: {
+    opacity: 0.82,
+  },
+  returningOrderText: {
+    color: BrandColors.darkAccent,
+    fontWeight: '600',
   },
   locationButton: {
     borderWidth: 1,

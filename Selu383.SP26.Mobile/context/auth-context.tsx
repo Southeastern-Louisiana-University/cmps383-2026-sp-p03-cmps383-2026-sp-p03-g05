@@ -16,6 +16,7 @@ type AuthContextValue = {
   isLoading: boolean;
   errorMessage: string | null;
   signIn: (userName: string, password: string) => Promise<void>;
+  beginDemoSession: (displayName: string) => void;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
   clearError: () => void;
@@ -60,6 +61,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
+  const beginDemoSession = useCallback((displayName: string) => {
+    setErrorMessage(null);
+    setUser({
+      id: -1,
+      userName: displayName.trim() || 'guest',
+      roles: ['User'],
+    });
+  }, []);
+
   const signOut = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -86,11 +96,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isLoading,
       errorMessage,
       signIn,
+      beginDemoSession,
       signOut,
       refreshSession,
       clearError,
     }),
-    [user, isLoading, errorMessage, signIn, signOut, refreshSession, clearError]
+    [user, isLoading, errorMessage, signIn, beginDemoSession, signOut, refreshSession, clearError]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

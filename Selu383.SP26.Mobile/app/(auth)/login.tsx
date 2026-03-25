@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { Redirect, router } from 'expo-router';
-import { Coffee, Leaf, LogIn } from 'lucide-react-native';
+import { Coffee, LogIn, UserPlus } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
@@ -22,7 +22,7 @@ export default function LoginScreen() {
     clearError();
     try {
       await signIn(userName, password);
-      router.replace('/(app)');
+      router.replace('/(app)/home');
     } catch {
       // Error is surfaced via context state.
     }
@@ -66,13 +66,15 @@ export default function LoginScreen() {
         <Pressable
           style={({ pressed }) => [styles.badge, pressed && styles.badgePressed]}
           onPress={() => router.push('/(auth)/fast-pickup')}>
-          <Coffee color={BrandColors.darkAccent} size={16} />
+          <Coffee color={BrandColors.primary} size={16} />
           <ThemedText style={styles.badgeText}>Fast Pickup</ThemedText>
         </Pressable>
-        <View style={styles.badge}>
-          <Leaf color={BrandColors.primary} size={16} />
-          <ThemedText style={styles.badgeText}>Eco Friendly</ThemedText>
-        </View>
+        <Pressable
+          style={({ pressed }) => [styles.badge, pressed && styles.badgePressed]}
+          onPress={() => router.push('/(auth)/signup')}>
+          <UserPlus color={BrandColors.primary} size={16} />
+          <ThemedText style={styles.badgeText}>Sign Up</ThemedText>
+        </Pressable>
       </View>
 
       <Pressable style={styles.primaryButton} onPress={onSignIn} disabled={isLoading}>
@@ -88,7 +90,7 @@ export default function LoginScreen() {
 
       {errorMessage ? <ThemedText style={styles.errorText}>{errorMessage}</ThemedText> : null}
 
-      <ThemedText style={styles.helperText}>Use seeded users like bob/sue/galkadi.</ThemedText>
+      {/* <ThemedText style={styles.helperText}>Use seeded users like bob/sue/galkadi.</ThemedText> */}
     </ThemedView>
   );
 }
