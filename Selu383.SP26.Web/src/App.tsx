@@ -1,5 +1,6 @@
 import "./index.css";
-import logo from "./assets/logo.png";
+import logo from "./assets/logo-round.png";
+import coffeeBag from "./assets/coffee bag.png";
 
 const featuredDrinks = [
   {
@@ -240,8 +241,8 @@ function App() {
 
           <div className="hero-card">
             <img
-              src={logo}
-              alt="Caffeinated Lions featured logo"
+              src={coffeeBag}
+              alt="Caffeinated Lions coffee bag"
               className="hero-logo"
             />
           </div>
