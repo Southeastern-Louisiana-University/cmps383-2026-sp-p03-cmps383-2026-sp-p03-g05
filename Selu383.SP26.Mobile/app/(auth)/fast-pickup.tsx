@@ -7,6 +7,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput,
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BrandColors } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
 
 const menuItems = ['Americano/Drip', 'Latte', 'Cappuccino', 'Iced Latte', 'Iced Coffee', 'Hot Tea'] as const;
 const sizeOptions = ['12oz', '16oz', '20 oz'] as const;
@@ -18,6 +19,8 @@ const storeOptions = [
 ] as const;
 const matchingCustomerName = 'Dom Gendusa';
 const matchingPhoneNumber = '985-320-2633';
+const fakeReturningUserName = 'javadom';
+const fakeReturningUserPassword = '123';
 const matchSuccessColor = '#2f9e44';
 
 type MenuItem = (typeof menuItems)[number];
@@ -38,10 +41,16 @@ function formatPhoneNumber(value: string) {
 }
 
 export default function FastPickupScreen() {
+  const { beginDemoSession } = useAuth();
   const [customerName, setCustomerName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [customerLookupStatus, setCustomerLookupStatus] = useState<'idle' | 'loading' | 'matched'>('idle');
   const [selectedReturningOrderIndex, setSelectedReturningOrderIndex] = useState<number | null>(null);
+  const [isReturningUserSignedIn, setIsReturningUserSignedIn] = useState(false);
+  const [isSignInModalVisible, setIsSignInModalVisible] = useState(false);
+  const [returningUserNameInput, setReturningUserNameInput] = useState('');
+  const [returningUserPasswordInput, setReturningUserPasswordInput] = useState('');
+  const [returningUserSignInError, setReturningUserSignInError] = useState<string | null>(null);
   const [activeDrink, setActiveDrink] = useState<MenuItem | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<Partial<Record<MenuItem, string>>>({});
   const [selectedLocation, setSelectedLocation] = useState<StoreOption>(storeOptions[0]);
@@ -80,6 +89,21 @@ export default function FastPickupScreen() {
       if (selectedReturningOrderIndex !== null) {
         setSelectedReturningOrderIndex(null);
       }
+      if (isReturningUserSignedIn) {
+        setIsReturningUserSignedIn(false);
+      }
+      if (isSignInModalVisible) {
+        setIsSignInModalVisible(false);
+      }
+      if (returningUserNameInput) {
+        setReturningUserNameInput('');
+      }
+      if (returningUserPasswordInput) {
+        setReturningUserPasswordInput('');
+      }
+      if (returningUserSignInError) {
+        setReturningUserSignInError(null);
+      }
 
       return;
     }
@@ -94,10 +118,24 @@ export default function FastPickupScreen() {
       setCustomerLookupStatus('matched');
       lookupTimerRef.current = null;
     }, 2000);
-  }, [customerLookupStatus, customerName, phoneNumber, selectedReturningOrderIndex]);
+  }, [
+    customerLookupStatus,
+    customerName,
+    isReturningUserSignedIn,
+    isSignInModalVisible,
+    phoneNumber,
+    returningUserNameInput,
+    returningUserPasswordInput,
+    returningUserSignInError,
+    selectedReturningOrderIndex,
+  ]);
 
   const closeSizeModal = () => setActiveDrink(null);
   const closeLocationModal = () => setIsLocationModalVisible(false);
+  const closeSignInModal = () => {
+    setIsSignInModalVisible(false);
+    setReturningUserSignInError(null);
+  };
 
   const chooseSize = (size: string) => {
     if (!activeDrink) {
@@ -125,7 +163,7 @@ export default function FastPickupScreen() {
     }
   };
 
-  const placeOrder = (returnToLogin = false) => {
+  const placeOrder = () => {
     if (isPlacingOrder) {
       return;
     }
@@ -139,8 +177,9 @@ export default function FastPickupScreen() {
     orderTimerRef.current = setTimeout(() => {
       setIsPlacingOrder(false);
 
-      if (returnToLogin) {
-        router.replace('/(auth)/login');
+      if (isReturningUserSignedIn) {
+        beginDemoSession(fakeReturningUserName);
+        router.replace('/(app)/home');
       } else {
         setIsSuccessModalVisible(true);
       }
@@ -151,7 +190,33 @@ export default function FastPickupScreen() {
 
   const closeSuccessModal = () => {
     setIsSuccessModalVisible(false);
-    router.replace('/(auth)/login');
+  };
+
+  const goToSignUpFromSuccess = () => {
+    setIsSuccessModalVisible(false);
+    router.replace('/(auth)/signup');
+  };
+
+  const openReturningUserSignInModal = () => {
+    setReturningUserNameInput('');
+    setReturningUserPasswordInput('');
+    setReturningUserSignInError(null);
+    setIsSignInModalVisible(true);
+  };
+
+  const signInReturningUser = () => {
+    const normalizedName = returningUserNameInput.trim();
+    const isValid =
+      normalizedName === fakeReturningUserName && returningUserPasswordInput === fakeReturningUserPassword;
+
+    if (!isValid) {
+      setReturningUserSignInError('Invalid username or password.');
+      return;
+    }
+
+    setReturningUserSignInError(null);
+    setIsReturningUserSignedIn(true);
+    setIsSignInModalVisible(false);
   };
 
   const renderCustomerLookupIndicator = () => {
@@ -235,7 +300,21 @@ export default function FastPickupScreen() {
           ))}
         </View>
 
-        {customerLookupStatus === 'matched' ? (
+        {customerLookupStatus === 'matched' && !isReturningUserSignedIn ? (
+          <View style={styles.returningPromptSection}>
+            <ThemedText style={styles.returningPromptMessage}>
+              Welcome Back. Sign in to order your favorites!
+            </ThemedText>
+            <Pressable
+              style={({ pressed }) => [styles.returningPromptButton, pressed && styles.returningPromptButtonPressed]}
+              onPress={openReturningUserSignInModal}
+              disabled={isPlacingOrder}>
+              <ThemedText style={styles.returningPromptButtonText}>Sign In</ThemedText>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {customerLookupStatus === 'matched' && isReturningUserSignedIn ? (
           <View style={styles.returningSection}>
             <ThemedText style={styles.returningHeading}>Welcome Back Dom!</ThemedText>
             <ThemedText style={styles.returningMessage}>Would you like to order another:</ThemedText>
@@ -272,7 +351,7 @@ export default function FastPickupScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.orderButton, pressed && styles.orderButtonPressed]}
-            onPress={() => placeOrder(selectedReturningOrderIndex !== null)}
+            onPress={placeOrder}
             disabled={isPlacingOrder}>
             <ThemedText style={styles.orderButtonText}>Place Order!</ThemedText>
           </Pressable>
@@ -338,6 +417,42 @@ export default function FastPickupScreen() {
         </View>
       </Modal>
 
+      <Modal visible={isSignInModalVisible} transparent animationType="fade" onRequestClose={closeSignInModal}>
+        <View style={styles.modalRoot}>
+          <Pressable style={[StyleSheet.absoluteFill, styles.modalBackdrop]} onPress={closeSignInModal} />
+          <View style={styles.signInCard}>
+            <ThemedText type="subtitle" style={styles.modalTitle}>
+              Sign In
+            </ThemedText>
+            <TextInput
+              value={returningUserNameInput}
+              onChangeText={setReturningUserNameInput}
+              placeholder="Username"
+              placeholderTextColor={BrandColors.darkAccent}
+              style={styles.signInInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextInput
+              value={returningUserPasswordInput}
+              onChangeText={setReturningUserPasswordInput}
+              placeholder="Password"
+              placeholderTextColor={BrandColors.darkAccent}
+              style={styles.signInInput}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {returningUserSignInError ? <ThemedText style={styles.signInError}>{returningUserSignInError}</ThemedText> : null}
+            <Pressable
+              style={({ pressed }) => [styles.signInButton, pressed && styles.signInButtonPressed]}
+              onPress={signInReturningUser}>
+              <ThemedText style={styles.signInButtonText}>Sign In</ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={isPlacingOrder} transparent animationType="fade">
         <View style={styles.modalRoot}>
           <View style={styles.loaderCard}>
@@ -356,8 +471,9 @@ export default function FastPickupScreen() {
               Success
             </ThemedText>
             <ThemedText style={styles.successMessage}>Your order has been placed.</ThemedText>
-            <Pressable style={({ pressed }) => [styles.successButton, pressed && styles.successButtonPressed]} onPress={closeSuccessModal}>
-              <ThemedText style={styles.successButtonText}>Back to Login</ThemedText>
+            <ThemedText style={styles.successPrompt}>Don't miss out on rewards. Sign up now!</ThemedText>
+            <Pressable style={({ pressed }) => [styles.successButton, pressed && styles.successButtonPressed]} onPress={goToSignUpFromSuccess}>
+              <ThemedText style={styles.successButtonText}>Sign Up</ThemedText>
             </Pressable>
           </View>
         </View>
@@ -482,6 +598,36 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     gap: 10,
+  },
+  returningPromptSection: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    gap: 10,
+    alignItems: 'center',
+  },
+  returningPromptMessage: {
+    color: BrandColors.darkAccent,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  returningPromptButton: {
+    width: '100%',
+    borderRadius: 10,
+    backgroundColor: BrandColors.primary,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  returningPromptButtonPressed: {
+    opacity: 0.85,
+  },
+  returningPromptButtonText: {
+    color: BrandColors.secondary,
+    fontWeight: '700',
   },
   returningHeading: {
     color: BrandColors.darkAccent,
@@ -672,6 +818,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  signInCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    backgroundColor: BrandColors.secondary,
+    padding: 18,
+    gap: 10,
+  },
+  signInInput: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    backgroundColor: '#fff',
+    color: BrandColors.darkAccent,
+  },
+  signInError: {
+    color: '#b42318',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  signInButton: {
+    marginTop: 2,
+    borderRadius: 10,
+    backgroundColor: BrandColors.primary,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  signInButtonPressed: {
+    opacity: 0.84,
+  },
+  signInButtonText: {
+    color: BrandColors.secondary,
+    fontWeight: '700',
+  },
   loaderText: {
     color: BrandColors.darkAccent,
     fontWeight: '600',
@@ -694,6 +878,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: BrandColors.text,
     marginBottom: 4,
+  },
+  successPrompt: {
+    textAlign: 'center',
+    color: BrandColors.darkAccent,
+    fontWeight: '600',
   },
   successButton: {
     marginTop: 6,
