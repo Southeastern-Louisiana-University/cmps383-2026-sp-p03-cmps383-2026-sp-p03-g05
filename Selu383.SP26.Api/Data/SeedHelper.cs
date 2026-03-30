@@ -31,21 +31,27 @@ public static class SeedHelper
 
         var adminUser = new User
         {
-            UserName = "galkadi"
+            UserName = "galkadi",
+            FirstName = "Admin",
+            LastName = "User",
         };
         await userManager.CreateAsync(adminUser, defaultPassword);
         await userManager.AddToRoleAsync(adminUser, RoleNames.Admin);
 
         var bob = new User
         {
-            UserName = "bob"
+            UserName = "bob",
+            FirstName = "Bob",
+            LastName = "Builder",
         };
         await userManager.CreateAsync(bob, defaultPassword);
         await userManager.AddToRoleAsync(bob, RoleNames.User);
 
         var sue = new User
         {
-            UserName = "sue"
+            UserName = "sue",
+            FirstName = "Sue",
+            LastName = "Smith",
         };
         await userManager.CreateAsync(sue, defaultPassword);
         await userManager.AddToRoleAsync(sue, RoleNames.User);
