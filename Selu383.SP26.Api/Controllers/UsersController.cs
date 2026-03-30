@@ -25,14 +25,14 @@ public class UsersController : ControllerBase
             .Select(x => new UserDto
             {
                 Id = x.Id,
-                UserName = x.UserName,
+                UserName = x.UserName ?? string.Empty,
                 FirstName = x.FirstName,
                 LastName = x.LastName,
                 Address = x.Address,
                 City = x.City,
                 State = x.State,
                 ZipCode = x.ZipCode,
-                Roles = x.UserRoles.Select(y => y.Role.Name).ToArray()
+                Roles = x.UserRoles.Select(y => y.Role!.Name ?? string.Empty).ToArray()
             }).ToListAsync();
 
         return Ok(users);
@@ -46,14 +46,14 @@ public class UsersController : ControllerBase
             .Select(x => new UserDto
             {
                 Id = x.Id,
-                UserName = x.UserName,
+                UserName = x.UserName ?? string.Empty,
                 FirstName = x.FirstName,
                 LastName = x.LastName,
                 Address = x.Address,
                 City = x.City,
                 State = x.State,
                 ZipCode = x.ZipCode,
-                Roles = x.UserRoles.Select(y => y.Role.Name).ToArray()
+                Roles = x.UserRoles.Select(y => y.Role!.Name ?? string.Empty).ToArray()
             }).FirstOrDefaultAsync();
 
         if (user == null)
@@ -149,7 +149,7 @@ public class UsersController : ControllerBase
         return Ok(new UserDto
         {
             Id = user.Id,
-            UserName = user.UserName,
+            UserName = user.UserName ?? string.Empty,
             FirstName = user.FirstName,
             LastName = user.LastName,
             Address = user.Address,
