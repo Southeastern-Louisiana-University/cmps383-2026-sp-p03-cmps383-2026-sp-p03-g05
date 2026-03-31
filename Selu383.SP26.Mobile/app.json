@@ -4,7 +4,7 @@
     "slug": "Selu383-SP26-P02-Mobile-g05",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo-round.png",
+    "icon": "./assets/images/logo.png",
     "scheme": "selu383sp26mobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,12 +14,13 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FBF3E8",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize",
       "package": "com.selu383.sp26.p02.g05"
     },
     "web": {
