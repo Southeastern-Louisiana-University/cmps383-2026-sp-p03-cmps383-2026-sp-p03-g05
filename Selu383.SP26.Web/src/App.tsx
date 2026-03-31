@@ -1,5 +1,6 @@
+import { useState } from "react";
 import "./index.css";
-import logo from "./assets/logo.png";
+import logo from "./assets/coffee bag.png";
 
 const featuredDrinks = [
   {
@@ -188,12 +189,31 @@ type MenuItem = {
   price: string;
 };
 
-function MenuCard({ item }: { item: MenuItem }) {
+function MenuCard({
+  item,
+  isAdded,
+  onToggle,
+}: {
+  item: MenuItem;
+  isAdded: boolean;
+  onToggle: () => void;
+}) {
   return (
     <article className="menu-card">
       <div className="menu-card-top">
         <h3>{item.name}</h3>
-        <span>{item.price}</span>
+
+        <div className="menu-card-actions">
+          <span>{item.price}</span>
+          <button
+            type="button"
+            className={`add-btn ${isAdded ? "added" : ""}`}
+            onClick={onToggle}
+            aria-label={isAdded ? `Remove ${item.name}` : `Add ${item.name}`}
+          >
+            {isAdded ? "✓" : "+"}
+          </button>
+        </div>
       </div>
       <p>{item.description}</p>
     </article>
@@ -201,6 +221,16 @@ function MenuCard({ item }: { item: MenuItem }) {
 }
 
 function App() {
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+
+  const toggleItem = (itemName: string) => {
+    setSelectedItems((prev) =>
+      prev.includes(itemName)
+        ? prev.filter((name) => name !== itemName)
+        : [...prev, itemName]
+    );
+  };
+
   return (
     <div className="page">
       <header className="navbar">
@@ -284,7 +314,12 @@ function App() {
           </div>
           <div className="menu-grid">
             {drinks.map((item) => (
-              <MenuCard key={item.name} item={item} />
+              <MenuCard
+                key={item.name}
+                item={item}
+                isAdded={selectedItems.includes(item.name)}
+                onToggle={() => toggleItem(item.name)}
+              />
             ))}
           </div>
         </section>
@@ -296,7 +331,12 @@ function App() {
           </div>
           <div className="menu-grid">
             {sweetCrepes.map((item) => (
-              <MenuCard key={item.name} item={item} />
+              <MenuCard
+                key={item.name}
+                item={item}
+                isAdded={selectedItems.includes(item.name)}
+                onToggle={() => toggleItem(item.name)}
+              />
             ))}
           </div>
         </section>
@@ -308,7 +348,12 @@ function App() {
           </div>
           <div className="menu-grid">
             {savoryCrepes.map((item) => (
-              <MenuCard key={item.name} item={item} />
+              <MenuCard
+                key={item.name}
+                item={item}
+                isAdded={selectedItems.includes(item.name)}
+                onToggle={() => toggleItem(item.name)}
+              />
             ))}
           </div>
         </section>
@@ -320,7 +365,12 @@ function App() {
           </div>
           <div className="menu-grid">
             {bagels.map((item) => (
-              <MenuCard key={item.name} item={item} />
+              <MenuCard
+                key={item.name}
+                item={item}
+                isAdded={selectedItems.includes(item.name)}
+                onToggle={() => toggleItem(item.name)}
+              />
             ))}
           </div>
         </section>

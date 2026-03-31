@@ -65,9 +65,11 @@ a {
 }
 
 .brand-logo {
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   object-fit: contain;
+  border-radius: 14px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16);
 }
 
 .nav-links {
@@ -157,6 +159,7 @@ a {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.12);
   background: white;
   padding: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .promo-strip {
@@ -267,6 +270,12 @@ a {
   margin-bottom: 10px;
 }
 
+.menu-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .menu-card h3 {
   font-size: 1.15rem;
 }
@@ -279,6 +288,32 @@ a {
 
 .menu-card p {
   color: #444;
+}
+
+.add-btn {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--lion-green);
+  color: white;
+  font-size: 1.25rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(16, 194, 154, 0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.add-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 14px rgba(16, 194, 154, 0.35);
+}
+
+.add-btn.added {
+  background: var(--lion-green-dark);
 }
 
 .about-box {
