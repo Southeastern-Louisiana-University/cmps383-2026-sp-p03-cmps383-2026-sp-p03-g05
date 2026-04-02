@@ -99,9 +99,9 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 56,
-    paddingBottom: 32,
+    paddingVertical: 24,
     backgroundColor: BrandColors.secondary,
+    justifyContent: 'center',
   },
   logoWrap: {
     width: 128,

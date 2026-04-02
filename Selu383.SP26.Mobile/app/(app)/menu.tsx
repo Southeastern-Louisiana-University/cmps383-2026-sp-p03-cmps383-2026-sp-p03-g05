@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -8,6 +9,7 @@ type MenuItem = {
   name: string;
   description: string;
   price: string;
+  image: number;
 };
 
 const drinks: MenuItem[] = [
@@ -15,33 +17,39 @@ const drinks: MenuItem[] = [
     name: 'Iced Latte',
     description: 'Espresso and milk served over ice for a refreshing coffee drink.',
     price: '$5.50',
+    image: require('@/assets/images/iced late.png'),
   },
   {
     name: 'Supernova',
     description:
       'A unique coffee blend with a complex, balanced profile and subtle sweetness. Delicious as espresso or paired with milk.',
     price: '$7.95',
+    image: require('@/assets/images/supernova.png'),
   },
   {
     name: 'Roaring Frappe',
     description:
       'Cold brew, milk, and ice blended together with a signature syrup or flavor, topped with whipped cream.',
     price: '$6.20',
+    image: require('@/assets/images/roaring frappe.png'),
   },
   {
     name: 'Black & White Cold Brew',
     description: 'Cold brew made with both dark and light roast beans, finished with a drizzle of condensed milk.',
     price: '$5.15',
+    image: require('@/assets/images/black white cold brew.png'),
   },
   {
     name: 'Strawberry Limeade',
     description: 'Fresh lime juice blended with strawberry puree for a refreshing, tangy drink.',
     price: '$5.00',
+    image: require('@/assets/images/strawberry limeade.png'),
   },
   {
     name: 'Shaken Lemonade',
     description: 'Fresh lemon juice and simple syrup vigorously shaken for a bright, refreshing lemonade.',
     price: '$5.00',
+    image: require('@/assets/images/shaken lemonade.png'),
   },
 ];
 
@@ -50,36 +58,43 @@ const sweetCrepes: MenuItem[] = [
     name: 'Mannino Honey Crepe',
     description: 'A sweet crepe drizzled with Mannino honey and topped with mixed berries.',
     price: '$10.00',
+    image: require('@/assets/images/mannino honey crepe.png'),
   },
   {
     name: 'Downtowner',
     description: "Strawberries and bananas wrapped in a crepe, finished with Nutella and Hershey's chocolate sauce.",
     price: '$10.75',
+    image: require('@/assets/images/downtowner.png'),
   },
   {
     name: 'Funky Monkey',
     description: 'Nutella and bananas wrapped in a crepe, served with whipped cream.',
     price: '$10.00',
+    image: require('@/assets/images/funky monkey.png'),
   },
   {
     name: "Le S'mores",
     description: 'Marshmallow cream and chocolate sauce inside a crepe, topped with graham cracker crumbs.',
     price: '$9.50',
+    image: require('@/assets/images/le smores.png'),
   },
   {
     name: 'Strawberry Fields',
     description: "Fresh strawberries with Hershey's chocolate drizzle and a dusting of powdered sugar.",
     price: '$10.00',
+    image: require('@/assets/images/strawberry fields.png'),
   },
   {
     name: 'Bonjour',
     description: 'A sweet crepe filled with syrup and cinnamon, finished with powdered sugar.',
     price: '$8.50',
+    image: require('@/assets/images/bonjour.png'),
   },
   {
     name: 'Banana Foster',
     description: 'Bananas with cinnamon in a crepe, topped with a generous drizzle of caramel sauce.',
     price: '$8.95',
+    image: require('@/assets/images/banana foster.png'),
   },
 ];
 
@@ -88,36 +103,43 @@ const savoryCrepes: MenuItem[] = [
     name: "Matt's Scrambled Eggs",
     description: 'Scrambled eggs and melted mozzarella cheese wrapped in a crepe.',
     price: '$5.00',
+    image: require('@/assets/images/matts scrambled eggs.png'),
   },
   {
     name: 'Meanie Mushroom',
     description: 'Sauteed mushrooms, mozzarella, tomato, and bacon inside a delicate crepe.',
     price: '$10.50',
+    image: require('@/assets/images/meanie mushroom.png'),
   },
   {
     name: 'Turkey Club',
     description: 'Sliced turkey, bacon, spinach, and tomato wrapped in a savory crepe.',
     price: '$10.50',
+    image: require('@/assets/images/turkey club.png'),
   },
   {
     name: 'Green Machine',
     description: 'Spinach, artichokes, and mozzarella cheese inside a fresh crepe.',
     price: '$10.00',
+    image: require('@/assets/images/green machine.png'),
   },
   {
     name: 'Perfect Pair',
     description: 'A unique combination of bacon and Nutella wrapped in a crepe.',
     price: '$10.00',
+    image: require('@/assets/images/perfect pair.png'),
   },
   {
     name: 'Crepe Fromage',
     description: 'A savory crepe filled with a blend of cheeses.',
     price: '$8.00',
+    image: require('@/assets/images/crepe fromage.png'),
   },
   {
     name: 'Farmers Market Crepe',
     description: 'Turkey, spinach, and mozzarella wrapped in a savory crepe.',
     price: '$10.50',
+    image: require('@/assets/images/farmers market.png'),
   },
 ];
 
@@ -126,26 +148,31 @@ const bagels: MenuItem[] = [
     name: 'Travis Special',
     description: 'Cream cheese, salmon, spinach, and a fried egg served on a freshly toasted bagel.',
     price: '$14.00',
+    image: require('@/assets/images/travis special.png'),
   },
   {
     name: 'Creme Brulagel',
     description: 'A toasted bagel with a caramelized sugar crust inspired by creme brulee, served with cream cheese.',
     price: '$8.00',
+    image: require('@/assets/images/creme brulagle.png'),
   },
   {
     name: 'The Fancy One',
     description: 'Smoked salmon, cream cheese, and fresh dill on a toasted bagel.',
     price: '$13.00',
+    image: require('@/assets/images/fancy one.png'),
   },
   {
     name: 'Breakfast Bagel',
     description: 'A toasted bagel with your choice of ham, bacon, or sausage, a fried egg, and cheddar cheese.',
     price: '$9.50',
+    image: require('@/assets/images/breakfast bagel.png'),
   },
   {
     name: 'The Classic',
     description: 'A toasted bagel with cream cheese.',
     price: '$5.25',
+    image: require('@/assets/images/classic.png'),
   },
 ];
 
@@ -175,11 +202,16 @@ export default function MenuScreen() {
               <View style={styles.list}>
                 {section.items.map((item) => (
                   <View key={item.name} style={styles.itemCard}>
-                    <View style={styles.itemTopRow}>
-                      <ThemedText style={styles.itemName}>{item.name}</ThemedText>
-                      <ThemedText style={styles.itemPrice}>{item.price}</ThemedText>
+                    <View style={styles.itemRow}>
+                      <Image source={item.image} style={styles.itemImage} contentFit="cover" transition={120} />
+                      <View style={styles.itemDetails}>
+                        <View style={styles.itemTopRow}>
+                          <ThemedText style={styles.itemName}>{item.name}</ThemedText>
+                          <ThemedText style={styles.itemPrice}>{item.price}</ThemedText>
+                        </View>
+                        <ThemedText style={styles.itemDescription}>{item.description}</ThemedText>
+                      </View>
                     </View>
-                    <ThemedText style={styles.itemDescription}>{item.description}</ThemedText>
                   </View>
                 ))}
               </View>
@@ -227,12 +259,26 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 12,
     backgroundColor: '#ffffff',
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  itemImage: {
+    width: 108,
+    height: 108,
+    borderRadius: 10,
+    backgroundColor: '#f2f2f2',
+  },
+  itemDetails: {
+    flex: 1,
     gap: 4,
   },
   itemTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
   },
   itemName: {
