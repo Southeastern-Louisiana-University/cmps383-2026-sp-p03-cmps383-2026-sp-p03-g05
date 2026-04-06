@@ -1,8 +1,10 @@
 import { Image } from 'expo-image';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Square, SquareCheck } from 'lucide-react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useCart } from '@/context/cart-context';
 import { BrandColors } from '@/constants/theme';
 
 type MenuItem = {
@@ -183,7 +185,11 @@ const menuSections = [
   { title: 'Bagels', items: bagels },
 ] as const;
 
+const parsePrice = (value: string) => Number.parseFloat(value.replace(/[^0-9.]/g, '')) || 0;
+
 export default function MenuScreen() {
+  const { isInCart, toggleCartItem } = useCart();
+
   return (
     <ThemedView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -200,20 +206,41 @@ export default function MenuScreen() {
               </ThemedText>
 
               <View style={styles.list}>
-                {section.items.map((item) => (
-                  <View key={item.name} style={styles.itemCard}>
-                    <View style={styles.itemRow}>
-                      <Image source={item.image} style={styles.itemImage} contentFit="cover" transition={120} />
-                      <View style={styles.itemDetails}>
-                        <View style={styles.itemTopRow}>
-                          <ThemedText style={styles.itemName}>{item.name}</ThemedText>
-                          <ThemedText style={styles.itemPrice}>{item.price}</ThemedText>
+                {section.items.map((item) => {
+                  const isSelected = isInCart(item.name);
+                  return (
+                    <View key={item.name} style={styles.itemCard}>
+                      <View style={styles.itemRow}>
+                        <Image source={item.image} style={styles.itemImage} contentFit="cover" transition={120} />
+                        <View style={styles.itemDetails}>
+                          <View style={styles.itemTopRow}>
+                            <ThemedText style={styles.itemName}>{item.name}</ThemedText>
+                            <ThemedText style={styles.itemPrice}>{item.price}</ThemedText>
+                          </View>
+                          <ThemedText style={styles.itemDescription}>{item.description}</ThemedText>
+                          <Pressable
+                            style={({ pressed }) => [styles.itemToggleButton, pressed && styles.itemToggleButtonPressed]}
+                            onPress={() =>
+                              toggleCartItem({
+                                key: item.name,
+                                name: item.name,
+                                unitPrice: parsePrice(item.price),
+                                image: item.image,
+                              })
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel={`${isSelected ? 'Remove' : 'Add'} ${item.name} ${isSelected ? 'from' : 'to'} cart`}>
+                            {isSelected ? (
+                              <SquareCheck color={BrandColors.primary} size={20} />
+                            ) : (
+                              <Square color={BrandColors.primary} size={20} />
+                            )}
+                          </Pressable>
                         </View>
-                        <ThemedText style={styles.itemDescription}>{item.description}</ThemedText>
                       </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
           ))}
@@ -294,5 +321,13 @@ const styles = StyleSheet.create({
     color: BrandColors.text,
     fontSize: 12,
     lineHeight: 17,
+  },
+  itemToggleButton: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    padding: 2,
+  },
+  itemToggleButtonPressed: {
+    opacity: 0.72,
   },
 });

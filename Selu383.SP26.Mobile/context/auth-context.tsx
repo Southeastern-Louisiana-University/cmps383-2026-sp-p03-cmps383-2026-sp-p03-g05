@@ -15,7 +15,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
   errorMessage: string | null;
-  signIn: (userName: string, password: string) => Promise<void>;
+  signIn: (userName: string, password: string) => Promise<UserDto>;
   beginDemoSession: (displayName: string) => void;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
@@ -42,30 +42,35 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
-  const signIn = useCallback(async (userName: string, password: string) => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      const loggedInUser = await authenticationApi.login({
-        userName: userName.trim(),
-        password,
-      });
-      setUser(loggedInUser);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Login failed';
-      setErrorMessage(message);
-      setUser(null);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const signIn = useCallback(
+    async (userName: string, password: string) => {
+      setIsLoading(true);
+      setErrorMessage(null);
+      try {
+        const loggedInUser = await authenticationApi.login({
+          userName: userName.trim(),
+          password,
+        });
+        setUser(loggedInUser);
+        return loggedInUser;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Login failed';
+        setErrorMessage(message);
+        setUser(null);
+        throw error;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
 
   const beginDemoSession = useCallback((displayName: string) => {
     setErrorMessage(null);
     setUser({
       id: -1,
       userName: displayName.trim() || 'guest',
+      pridePoints: 0,
       roles: ['User'],
     });
   }, []);

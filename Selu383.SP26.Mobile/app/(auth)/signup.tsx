@@ -166,7 +166,7 @@ export default function SignUpScreen() {
       return;
     }
 
-    beginDemoSession(name || 'New User');
+    beginDemoSession(name.trim());
     router.replace('/(app)/home');
   };
 
