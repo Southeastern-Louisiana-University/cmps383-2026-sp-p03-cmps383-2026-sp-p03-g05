@@ -13,6 +13,19 @@ namespace Selu383.SP26.Api.Features.Reservations
             builder.Property(r => r.Date)
                 .IsRequired()
                 .HasMaxLength(10);
+            builder.HasOne(r => r.Order)
+                .WithMany()
+                .HasForeignKey(static r => r.OrderId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne(r => r.Location)
+                .WithMany()
+                .HasForeignKey( r => r.LocationId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne(r => r.Table)
+                .WithMany()
+                .HasForeignKey(r => r.TableId)
+                .OnDelete(DeleteBehavior.NoAction);
+
 
 
         }
