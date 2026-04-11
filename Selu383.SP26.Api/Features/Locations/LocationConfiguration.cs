@@ -10,5 +10,8 @@ public class LocationConfiguration : IEntityTypeConfiguration<Location>
         builder.Property(x => x.Name)
             .IsRequired()
             .HasMaxLength(120);
+
+        builder.HasIndex(x => x.Name)
+            .IsUnique();
     }
 }

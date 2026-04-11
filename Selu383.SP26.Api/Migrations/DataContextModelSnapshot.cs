@@ -333,6 +333,9 @@ namespace Selu383.SP26.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Name")
+                        .IsUnique();
+
                     b.HasIndex("ManagerId");
 
                     b.ToTable("Locations");
