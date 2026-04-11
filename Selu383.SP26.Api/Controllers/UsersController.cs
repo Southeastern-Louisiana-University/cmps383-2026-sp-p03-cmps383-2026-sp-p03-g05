@@ -68,10 +68,15 @@ public class UsersController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = RoleNames.Admin)]
     public async Task<ActionResult<UserDto>> Create(CreateUserDto dto)
     {
+        if (!dto.HasAgreedToPolicies)
+        {
+            return BadRequest("Terms of Service and Privacy Policy must be accepted.");
+        }
+
         using var transaction = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
+        var assignedRoles = User.IsInRole(RoleNames.Admin) ? dto.Roles : [RoleNames.User];
 
         var newUser = new User
         {
@@ -93,7 +98,7 @@ public class UsersController : ControllerBase
 
         try
         {
-            var roleResult = await userManager.AddToRolesAsync(newUser, dto.Roles);
+            var roleResult = await userManager.AddToRolesAsync(newUser, assignedRoles);
             if (!roleResult.Succeeded)
             {
                 return BadRequest();
@@ -117,7 +122,7 @@ public class UsersController : ControllerBase
             City = newUser.City,
             State = newUser.State,
             ZipCode = newUser.ZipCode,
-            Roles = dto.Roles
+            Roles = assignedRoles
         });
     }
 

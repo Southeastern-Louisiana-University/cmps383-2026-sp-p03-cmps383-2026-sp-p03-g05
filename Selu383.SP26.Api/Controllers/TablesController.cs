@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Selu383.SP26.Api.Data;
 using Selu383.SP26.Api.Features.Auth;
+using Selu383.SP26.Api.Features.Locations;
 using Selu383.SP26.Api.Features.Tables;
 
 namespace Selu383.SP26.Api.Controllers;
@@ -12,40 +13,53 @@ namespace Selu383.SP26.Api.Controllers;
 public class TablesController(DataContext dataContext) : ControllerBase
 {
     [HttpGet]
-    public IQueryable<TableDto> GetAll()
+    public async Task<ActionResult<IEnumerable<TableDto>>> GetAll()
     {
-        return dataContext.Set<Table>()
+        var result = await dataContext.Set<Table>()
+            .AsNoTracking()
+            .OrderBy(x => x.LocationId)
+            .ThenBy(x => x.Number)
             .Select(x => new TableDto
             {
                 Id = x.Id,
                 Number = x.Number,
                 LocationId = x.LocationId,
-            });
+            })
+            .ToListAsync();
+
+        return Ok(result);
     }
 
-    [HttpGet("{id}")]
-    public ActionResult<TableDto> GetById(int id)
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<TableDto>> GetById(int id)
     {
-        var result = dataContext.Set<Table>()
-            .FirstOrDefault(x => x.Id == id);
+        var table = await dataContext.Set<Table>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id);
 
-        if (result == null)
+        if (table == null)
         {
             return NotFound();
         }
 
         return Ok(new TableDto
         {
-            Id = result.Id,
-            Number = result.Number,
-            LocationId = result.LocationId,
+            Id = table.Id,
+            Number = table.Number,
+            LocationId = table.LocationId,
         });
     }
 
     [HttpPost]
     [Authorize(Roles = RoleNames.Admin)]
-    public ActionResult<TableDto> Create(TableDto dto)
+    public async Task<ActionResult<TableDto>> Create(TableDto dto)
     {
+        var validationError = await ValidateTablePayload(dto, null);
+        if (validationError != null)
+        {
+            return BadRequest(validationError);
+        }
+
         var table = new Table
         {
             Number = dto.Number,
@@ -53,41 +67,53 @@ public class TablesController(DataContext dataContext) : ControllerBase
         };
 
         dataContext.Set<Table>().Add(table);
-        dataContext.SaveChanges();
+        await dataContext.SaveChangesAsync();
 
-        dto.Id = table.Id;
-
-        return CreatedAtAction(nameof(GetById), new { id = dto.Id }, dto);
+        return CreatedAtAction(nameof(GetById), new { id = table.Id }, new TableDto
+        {
+            Id = table.Id,
+            Number = table.Number,
+            LocationId = table.LocationId,
+        });
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:int}")]
     [Authorize(Roles = RoleNames.Admin)]
-    public ActionResult<TableDto> Update(int id, TableDto dto)
+    public async Task<ActionResult<TableDto>> Update(int id, TableDto dto)
     {
-        var table = dataContext.Set<Table>()
-            .FirstOrDefault(x => x.Id == id);
+        var table = await dataContext.Set<Table>()
+            .FirstOrDefaultAsync(x => x.Id == id);
 
         if (table == null)
         {
             return NotFound();
         }
 
+        var validationError = await ValidateTablePayload(dto, id);
+        if (validationError != null)
+        {
+            return BadRequest(validationError);
+        }
+
         table.Number = dto.Number;
         table.LocationId = dto.LocationId;
 
-        dataContext.SaveChanges();
+        await dataContext.SaveChangesAsync();
 
-        dto.Id = table.Id;
-
-        return Ok(dto);
+        return Ok(new TableDto
+        {
+            Id = table.Id,
+            Number = table.Number,
+            LocationId = table.LocationId,
+        });
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:int}")]
     [Authorize(Roles = RoleNames.Admin)]
-    public ActionResult Delete(int id)
+    public async Task<ActionResult> Delete(int id)
     {
-        var table = dataContext.Set<Table>()
-            .FirstOrDefault(x => x.Id == id);
+        var table = await dataContext.Set<Table>()
+            .FirstOrDefaultAsync(x => x.Id == id);
 
         if (table == null)
         {
@@ -95,8 +121,42 @@ public class TablesController(DataContext dataContext) : ControllerBase
         }
 
         dataContext.Set<Table>().Remove(table);
-        dataContext.SaveChanges();
+        await dataContext.SaveChangesAsync();
 
         return Ok();
+    }
+
+    private async Task<string?> ValidateTablePayload(TableDto dto, int? existingTableId)
+    {
+        if (dto.Number <= 0)
+        {
+            return "Table number must be greater than zero.";
+        }
+
+        if (dto.LocationId <= 0)
+        {
+            return "LocationId must be greater than zero.";
+        }
+
+        var locationExists = await dataContext.Set<Location>()
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == dto.LocationId);
+        if (!locationExists)
+        {
+            return $"Location {dto.LocationId} was not found.";
+        }
+
+        var duplicateExists = await dataContext.Set<Table>()
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.LocationId == dto.LocationId &&
+                x.Number == dto.Number &&
+                (!existingTableId.HasValue || x.Id != existingTableId.Value));
+        if (duplicateExists)
+        {
+            return "A table with this number already exists at this location.";
+        }
+
+        return null;
     }
 }

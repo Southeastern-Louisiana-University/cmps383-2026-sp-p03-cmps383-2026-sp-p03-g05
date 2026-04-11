@@ -10,6 +10,20 @@ export type LoginDto = {
   password: string;
 };
 
+export type CreateUserDto = {
+  userName: string;
+  password: string;
+  roles: string[];
+  firstName: string;
+  lastName: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  pridePoints: number;
+  hasAgreedToPolicies: boolean;
+};
+
 export type LocationDto = {
   id: number;
   name: string;
@@ -59,6 +73,37 @@ export type OrderHistoryDto = {
   orderedAt: string;
   total: number;
   items: OrderItemDto[];
+};
+
+export type ReservationDto = {
+  id: number;
+  userId: number;
+  orderId?: number | null;
+  tableId: number;
+  locationId: number;
+  date: string;
+  time: string;
+};
+
+export type CreateReservationDto = {
+  locationId: number;
+  orderId?: number | null;
+  date: string;
+  time: string;
+  paymentMethod?: string | null;
+};
+
+export type ReservationTimeSlotDto = {
+  time: string;
+  availableTables: number;
+  isAvailable: boolean;
+};
+
+export type ReservationAvailabilityDto = {
+  locationId: number;
+  date: string;
+  totalTables: number;
+  timeSlots: ReservationTimeSlotDto[];
 };
 
 type RequestOptions = RequestInit & {
@@ -125,6 +170,11 @@ export const authenticationApi = {
 };
 
 export const usersApi = {
+  create: (payload: CreateUserDto) =>
+    request<UserDto>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   getById: (id: number) => request<UserDto>(`/api/users/${id}`),
   awardRewards: (id: number, payload: AwardRewardsDto) =>
     request<AwardRewardsResultDto>(`/api/users/${id}/rewards`, {
@@ -148,4 +198,15 @@ export const ordersApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+};
+
+export const reservationsApi = {
+  availability: (locationId: number, date: string) =>
+    request<ReservationAvailabilityDto>(`/api/reservations/availability?locationId=${locationId}&date=${encodeURIComponent(date)}`),
+  create: (payload: CreateReservationDto) =>
+    request<ReservationDto>('/api/reservations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  list: () => request<ReservationDto[]>('/api/reservations'),
 };
