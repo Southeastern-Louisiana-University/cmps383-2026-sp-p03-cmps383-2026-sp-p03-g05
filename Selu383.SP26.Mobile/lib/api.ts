@@ -44,6 +44,16 @@ export type CreateOrderDto = {
   items: OrderItemDto[];
 };
 
+export type AwardRewardsDto = {
+  pointsToAdd: number;
+};
+
+export type AwardRewardsResultDto = {
+  userId: number;
+  pointsAwarded: number;
+  pridePoints: number;
+};
+
 export type OrderHistoryDto = {
   id: number;
   orderedAt: string;
@@ -116,6 +126,11 @@ export const authenticationApi = {
 
 export const usersApi = {
   getById: (id: number) => request<UserDto>(`/api/users/${id}`),
+  awardRewards: (id: number, payload: AwardRewardsDto) =>
+    request<AwardRewardsResultDto>(`/api/users/${id}/rewards`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
 
 export const locationsApi = {

@@ -12,7 +12,6 @@ import {
   Square,
   SquareCheck,
   ShoppingCart,
-  ThumbsUp,
   X,
 } from "lucide-react";
 import "./index.css";
@@ -329,6 +328,12 @@ type AuthenticationUserDto = {
   roles: string[];
 };
 
+type AwardRewardsResultDto = {
+  userId: number;
+  pointsAwarded: number;
+  pridePoints: number;
+};
+
 type LocationDto = {
   id: number;
   name: string;
@@ -362,6 +367,11 @@ const paymentMethodOptions = [
 
 const parsePrice = (value: string) =>
   Number.parseFloat(value.replace(/[^0-9.]/g, "")) || 0;
+
+const calculateRewardPoints = (orderTotal: number) =>
+  Math.max(0, Math.round(orderTotal * 10));
+const rewardsCounterDurationMs = 1200;
+const rewardsPopupHoldMs = 3000;
 
 const buildApiUrl = (path: string) =>
   `${apiBaseUrl.replace(/\/$/, "")}${path}`;
@@ -447,6 +457,8 @@ function App() {
   const [orderErrorMessage, setOrderErrorMessage] = useState<string | null>(null);
   const [orderSuccessMessageVisible, setOrderSuccessMessageVisible] =
     useState(false);
+  const [rewardPointsEarned, setRewardPointsEarned] = useState(0);
+  const [rewardCounter, setRewardCounter] = useState(0);
   const [featuredMenuItems, setFeaturedMenuItems] = useState<MenuItem[]>(
     featuredDrinks,
   );
@@ -461,6 +473,7 @@ function App() {
   const swipeStartX = useRef<number | null>(null);
   const swipeDeltaX = useRef(0);
   const closeCheckoutTimer = useRef<number | null>(null);
+  const rewardsCounterTimer = useRef<number | null>(null);
   const authControlRef = useRef<HTMLDivElement | null>(null);
   const isCustomerPage = currentPath === customerPagePath;
   const displayMenuItems = [
@@ -897,10 +910,16 @@ function App() {
       window.clearTimeout(closeCheckoutTimer.current);
       closeCheckoutTimer.current = null;
     }
+    if (rewardsCounterTimer.current !== null) {
+      window.clearInterval(rewardsCounterTimer.current);
+      rewardsCounterTimer.current = null;
+    }
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(false);
     setOrderErrorMessage(null);
     setOrderSuccessMessageVisible(false);
+    setRewardPointsEarned(0);
+    setRewardCounter(0);
   };
 
   const handleKeepShopping = () => {
@@ -945,9 +964,75 @@ function App() {
   const openCheckoutModal = () => {
     setOrderErrorMessage(null);
     setOrderSuccessMessageVisible(false);
+    setRewardPointsEarned(0);
+    setRewardCounter(0);
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(true);
     void fetchLocations();
+  };
+
+  const startRewardsCounterAnimation = (pointsToAdd: number) => {
+    setRewardPointsEarned(pointsToAdd);
+    setRewardCounter(0);
+
+    if (rewardsCounterTimer.current !== null) {
+      window.clearInterval(rewardsCounterTimer.current);
+      rewardsCounterTimer.current = null;
+    }
+
+    if (pointsToAdd <= 0) {
+      return;
+    }
+
+    const startedAt = Date.now();
+
+    rewardsCounterTimer.current = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const progress = Math.min(1, elapsed / rewardsCounterDurationMs);
+      const nextValue = Math.floor(pointsToAdd * progress);
+      setRewardCounter(nextValue);
+
+      if (progress >= 1) {
+        setRewardCounter(pointsToAdd);
+        if (rewardsCounterTimer.current !== null) {
+          window.clearInterval(rewardsCounterTimer.current);
+          rewardsCounterTimer.current = null;
+        }
+      }
+    }, 30);
+  };
+
+  const applyRewardsFromOrder = async (pointsToAdd: number) => {
+    if (pointsToAdd <= 0 || currentUserId === null) {
+      return;
+    }
+
+    try {
+      // Fetch current points first, then update with increment API.
+      await fetch(buildApiUrl(`/api/users/${currentUserId}`), {
+        credentials: "include",
+      });
+
+      const response = await fetch(buildApiUrl(`/api/users/${currentUserId}/rewards`), {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pointsToAdd,
+        }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const rewardsUpdate = (await response.json()) as AwardRewardsResultDto;
+      setPridePoints(rewardsUpdate.pridePoints);
+    } catch {
+      // Do not fail order flow when rewards update fails.
+    }
   };
 
   const handleSubmitOrder = async () => {
@@ -1004,6 +1089,9 @@ function App() {
         throw new Error(message);
       }
 
+      const pointsToAdd = calculateRewardPoints(cartSubtotal);
+      await applyRewardsFromOrder(pointsToAdd);
+      startRewardsCounterAnimation(pointsToAdd);
       setOrderSuccessMessageVisible(true);
       if (closeCheckoutTimer.current !== null) {
         window.clearTimeout(closeCheckoutTimer.current);
@@ -1012,7 +1100,7 @@ function App() {
         clearCart();
         closeCartAndCheckout();
         closeCheckoutTimer.current = null;
-      }, 2000);
+      }, rewardsCounterDurationMs + rewardsPopupHoldMs);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Order failed";
       setOrderErrorMessage(message);
@@ -1025,6 +1113,9 @@ function App() {
     () => () => {
       if (closeCheckoutTimer.current !== null) {
         window.clearTimeout(closeCheckoutTimer.current);
+      }
+      if (rewardsCounterTimer.current !== null) {
+        window.clearInterval(rewardsCounterTimer.current);
       }
     },
     [],
@@ -1081,6 +1172,11 @@ function App() {
       setIsSubmittingLogin(false);
     }
   };
+
+  const rewardWheelProgress =
+    rewardPointsEarned > 0
+      ? Math.min(100, Math.round((rewardCounter / rewardPointsEarned) * 100))
+      : 100;
 
   return (
     <div className="page">
@@ -1559,8 +1655,18 @@ function App() {
 
             {orderSuccessMessageVisible ? (
               <div className="checkout-success">
-                <ThumbsUp size={40} />
-                <p>Order placed.</p>
+                <h3>Contrats! you earned rewards points!</h3>
+                <div
+                  className="rewards-wheel"
+                  style={{
+                    background: `conic-gradient(var(--lion-green-dark) ${rewardWheelProgress}%, #dde4df ${rewardWheelProgress}% 100%)`,
+                  }}
+                >
+                  <div className="rewards-wheel-inner">
+                    <strong>{rewardCounter}</strong>
+                  </div>
+                </div>
+                <p className="rewards-earned">+{rewardPointsEarned} points</p>
               </div>
             ) : (
               <>

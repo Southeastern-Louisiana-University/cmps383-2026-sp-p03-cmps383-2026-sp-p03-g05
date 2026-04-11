@@ -549,14 +549,52 @@ a {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   padding: 26px 0;
   color: var(--lion-green-dark);
+}
+
+.checkout-success h3 {
+  font-size: 1.08rem;
+  line-height: 1.3;
+  font-weight: 700;
+  text-align: center;
 }
 
 .checkout-success p {
   font-size: 1.05rem;
   font-weight: 700;
+}
+
+.rewards-wheel {
+  width: 128px;
+  height: 128px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rewards-wheel-inner {
+  width: 94px;
+  height: 94px;
+  border-radius: 999px;
+  border: 1px solid var(--lion-border);
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rewards-wheel-inner strong {
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--lion-green-dark);
+}
+
+.rewards-earned {
+  color: var(--lion-black);
+  font-size: 0.95rem;
 }
 
 .spinning-icon {

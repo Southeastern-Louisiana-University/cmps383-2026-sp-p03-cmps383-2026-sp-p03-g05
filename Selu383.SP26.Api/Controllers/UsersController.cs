@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Selu383.SP26.Api.Extensions;
 using Selu383.SP26.Api.Features.Auth;
 
 namespace Selu383.SP26.Api.Controllers;
@@ -163,6 +164,58 @@ public class UsersController : ControllerBase
             State = user.State,
             ZipCode = user.ZipCode,
             Roles = (await userManager.GetRolesAsync(user)).ToArray()
+        });
+    }
+
+    [HttpPost("{id}/rewards")]
+    [Authorize]
+    public async Task<ActionResult<AwardRewardsResultDto>> AwardRewards(int id, AwardRewardsDto dto)
+    {
+        if (dto.PointsToAdd < 1)
+        {
+            return BadRequest("PointsToAdd must be greater than zero.");
+        }
+
+        var user = await userManager.FindByIdAsync(id.ToString());
+        if (user == null)
+        {
+            return NotFound();
+        }
+
+        var currentUserId = User.GetCurrentUserId();
+        if (currentUserId == null)
+        {
+            return Unauthorized();
+        }
+
+        if (currentUserId != id && !User.IsInRole(RoleNames.Admin))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            checked
+            {
+                user.RewardsTotal += dto.PointsToAdd;
+            }
+        }
+        catch (OverflowException)
+        {
+            return BadRequest("Rewards total overflow.");
+        }
+
+        var updateResult = await userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            return BadRequest();
+        }
+
+        return Ok(new AwardRewardsResultDto
+        {
+            UserId = user.Id,
+            PointsAwarded = dto.PointsToAdd,
+            PridePoints = user.RewardsTotal
         });
     }
 }

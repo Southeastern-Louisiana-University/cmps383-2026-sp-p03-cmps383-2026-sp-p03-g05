@@ -25,16 +25,16 @@ function getCompletedLevels(pridePoints: number) {
   if (pridePoints < 0) {
     return 0;
   }
-  if (pridePoints <= 100) {
+  if (pridePoints <= 1000) {
     return 1;
   }
-  if (pridePoints <= 200) {
+  if (pridePoints <= 2000) {
     return 2;
   }
-  if (pridePoints <= 300) {
+  if (pridePoints <= 3000) {
     return 3;
   }
-  if (pridePoints <= 400) {
+  if (pridePoints <= 4000) {
     return 4;
   }
   return 5;
