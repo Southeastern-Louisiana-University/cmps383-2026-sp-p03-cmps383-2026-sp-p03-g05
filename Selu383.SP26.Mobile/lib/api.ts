@@ -1,12 +1,54 @@
 export type UserDto = {
   id: number;
   userName: string;
+  pridePoints?: number;
   roles: string[];
 };
 
 export type LoginDto = {
   userName: string;
   password: string;
+};
+
+export type LocationDto = {
+  id: number;
+  name: string;
+  address: string;
+  tableCount: number;
+  managerId?: number | null;
+};
+
+export type MenuItemDto = {
+  id: number;
+  itemName: string;
+  type: string;
+  featured: boolean;
+  price: number;
+  description: string;
+  nutrition: string;
+};
+
+export type OrderItemDto = {
+  menuItemId?: number;
+  name: string;
+  imageUrl?: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+export type CreateOrderDto = {
+  locationId: number;
+  pickupType: 'In Store' | 'Drive Through';
+  paymentMethod: string;
+  total: number;
+  items: OrderItemDto[];
+};
+
+export type OrderHistoryDto = {
+  id: number;
+  orderedAt: string;
+  total: number;
+  items: OrderItemDto[];
 };
 
 type RequestOptions = RequestInit & {
@@ -69,5 +111,26 @@ export const authenticationApi = {
   logout: () =>
     request<void>('/api/authentication/logout', {
       method: 'POST',
+    }),
+};
+
+export const usersApi = {
+  getById: (id: number) => request<UserDto>(`/api/users/${id}`),
+};
+
+export const locationsApi = {
+  list: () => request<LocationDto[]>('/api/locations'),
+};
+
+export const menuItemsApi = {
+  list: () => request<MenuItemDto[]>('/api/menuitems'),
+};
+
+export const ordersApi = {
+  history: () => request<OrderHistoryDto[]>('/api/orders/history'),
+  create: (payload: CreateOrderDto) =>
+    request<void>('/api/orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 };
