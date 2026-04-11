@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Selu383.SP26.Api.Features.Auth;
 
 namespace Selu383.SP26.Api.Features.Locations;
 
@@ -10,5 +11,17 @@ public class LocationConfiguration : IEntityTypeConfiguration<Location>
         builder.Property(x => x.Name)
             .IsRequired()
             .HasMaxLength(120);
+
+        builder.Property(x => x.Address)
+            .IsRequired();
+
+        builder.Property(x => x.TableCount)
+            .IsRequired();
+
+        builder.HasOne(x => x.Manager)
+            .WithMany()
+            .HasForeignKey(x => x.ManagerId)
+            .OnDelete(DeleteBehavior.NoAction)
+            .IsRequired(false);
     }
 }

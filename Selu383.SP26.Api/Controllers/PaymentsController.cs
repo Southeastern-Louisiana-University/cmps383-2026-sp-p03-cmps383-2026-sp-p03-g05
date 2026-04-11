@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Selu383.SP26.Api.Data;
+using Selu383.SP26.Api.Extensions;
+using Selu383.SP26.Api.Features.Auth;
 using Selu383.SP26.Api.Features.Payments;
 
 namespace Selu383.SP26.Api.Controllers;
@@ -50,7 +53,7 @@ public class PaymentsController(DataContext dataContext) : ControllerBase
     {
         var payment = new Payment
         {
-            UserId = dto.UserId,
+            UserId = User.GetCurrentUserId() ?? 0,
             CardholderName = dto.CardholderName,
             LastFourDigits = dto.LastFourDigits,
             ExpirationDate = dto.ExpirationDate
@@ -60,8 +63,43 @@ public class PaymentsController(DataContext dataContext) : ControllerBase
         dataContext.SaveChanges();
 
         dto.Id = payment.Id;
+        dto.UserId = payment.UserId;
 
         return CreatedAtAction(nameof(GetById), new { id = dto.Id }, dto);
+    }
+
+    [HttpPut("{id}")]
+    [Authorize]
+    public ActionResult<PaymentDto> Update(int id, PaymentDto dto)
+    {
+        var payment = dataContext.Set<Payment>()
+            .FirstOrDefault(x => x.Id == id);
+
+        if (payment == null)
+        {
+            return NotFound();
+        }
+
+        var currentUserId = User.GetCurrentUserId();
+        if (payment.UserId != currentUserId && !User.IsInRole(RoleNames.Admin))
+        {
+            return Forbid();
+        }
+
+        payment.CardholderName = dto.CardholderName;
+        payment.LastFourDigits = dto.LastFourDigits;
+        payment.ExpirationDate = dto.ExpirationDate;
+
+        dataContext.SaveChanges();
+
+        return Ok(new PaymentDto
+        {
+            Id = payment.Id,
+            UserId = payment.UserId,
+            CardholderName = payment.CardholderName,
+            LastFourDigits = payment.LastFourDigits,
+            ExpirationDate = payment.ExpirationDate
+        });
     }
 
     [HttpDelete("{id}")]
@@ -74,6 +112,12 @@ public class PaymentsController(DataContext dataContext) : ControllerBase
         if (payment == null)
         {
             return NotFound();
+        }
+
+        var currentUserId = User.GetCurrentUserId();
+        if (payment.UserId != currentUserId && !User.IsInRole(RoleNames.Admin))
+        {
+            return Forbid();
         }
 
         dataContext.Set<Payment>().Remove(payment);

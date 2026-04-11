@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Selu383.SP26.Api.Features.Auth;
 
 namespace Selu383.SP26.Api.Features.Reservations
 {
@@ -9,25 +10,31 @@ namespace Selu383.SP26.Api.Features.Reservations
         {
             builder.Property(r => r.Time)
                 .IsRequired()
-                .HasMaxLength(5);
+                .HasMaxLength(50);
+
             builder.Property(r => r.Date)
                 .IsRequired()
-                .HasMaxLength(10);
+                .HasMaxLength(50);
+
+            builder.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
             builder.HasOne(r => r.Order)
                 .WithMany()
-                .HasForeignKey(static r => r.OrderId)
+                .HasForeignKey(r => r.OrderId)
                 .OnDelete(DeleteBehavior.NoAction);
+
             builder.HasOne(r => r.Location)
                 .WithMany()
-                .HasForeignKey( r => r.LocationId)
+                .HasForeignKey(r => r.LocationId)
                 .OnDelete(DeleteBehavior.NoAction);
+
             builder.HasOne(r => r.Table)
                 .WithMany()
                 .HasForeignKey(r => r.TableId)
                 .OnDelete(DeleteBehavior.NoAction);
-
-
-
         }
     }
 }
