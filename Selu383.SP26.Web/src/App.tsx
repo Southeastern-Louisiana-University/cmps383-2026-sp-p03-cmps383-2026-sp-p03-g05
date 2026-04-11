@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
+  Check,
   ChevronsLeft,
   ChevronsRight,
   CircleUserRound,
   LoaderCircle,
+  LogOut,
   Minus,
   Plus,
   Square,
@@ -41,6 +43,11 @@ import cremeBrulagleImg from "./assets/creme brulagle.png";
 import fancyOneImg from "./assets/fancy one.png";
 import breakfastBagelImg from "./assets/breakfast bagel.png";
 import classicImg from "./assets/classic.png";
+import masterpayImg from "./assets/masterpay.png";
+import visapayImg from "./assets/visapay.png";
+import applepayImg from "./assets/applepay.png";
+import gpayImg from "./assets/gpay.png";
+import CustomerPage from "./customerpage";
 
 const menuItemImages: Record<string, string> = {
   "Iced Latte": icedLateImg,
@@ -261,7 +268,42 @@ const bagels = withMenuImages([
   },
 ]);
 
-const allMenuItems = [...drinks, ...sweetCrepes, ...savoryCrepes, ...bagels];
+const sweetCrepeItemNames = new Set([
+  "Mannino Honey Crepe",
+  "Downtowner",
+  "Funky Monkey",
+  "Le S'mores",
+  "Strawberry Fields",
+  "Bonjour",
+  "Banana Foster",
+]);
+
+const bagelItemNames = new Set([
+  "Travis Special",
+  "Creme Brulagel",
+  "Crème Brulagel",
+  "The Fancy One",
+  "Breakfast Bagel",
+  "The Classic",
+]);
+
+const savoryCrepeItemNames = new Set([
+  "Matt's Scrambled Eggs",
+  "Meanie Mushroom",
+  "Turkey Club",
+  "Green Machine",
+  "Perfect Pair",
+  "Crepe Fromage",
+  "Farmers Market Crepe",
+]);
+
+const normalizeMenuItemName = (value: string) => {
+  if (value.toLowerCase().includes("brulagel")) {
+    return "Creme Brulagel";
+  }
+
+  return value;
+};
 
 type MenuItem = {
   name: string;
@@ -270,9 +312,20 @@ type MenuItem = {
   image: string;
 };
 
+type ApiMenuItemDto = {
+  id: number;
+  itemName: string;
+  type: string;
+  featured: boolean;
+  price: number;
+  description: string;
+  nutrition: string;
+};
+
 type AuthenticationUserDto = {
   id: number;
   userName: string;
+  pridePoints?: number;
   roles: string[];
 };
 
@@ -300,20 +353,29 @@ const apiBaseUrl =
     : defaultApiBaseUrl;
 
 const pickupOptions = ["In Store", "Drive Through"] as const;
-const paymentPlaceholder = "Integrate 3rd Party Payment Processing Here";
+const paymentMethodOptions = [
+  { value: "masterpay", label: "MasterPay", image: masterpayImg },
+  { value: "visapay", label: "VisaPay", image: visapayImg },
+  { value: "applepay", label: "ApplePay", image: applepayImg },
+  { value: "gpay", label: "GPay", image: gpayImg },
+] as const;
 
 const parsePrice = (value: string) =>
   Number.parseFloat(value.replace(/[^0-9.]/g, "")) || 0;
 
-const menuItemByName = new Map(
-  allMenuItems.map((item) => [
-    item.name,
-    { ...item, unitPrice: parsePrice(item.price) },
-  ]),
-);
-
 const buildApiUrl = (path: string) =>
   `${apiBaseUrl.replace(/\/$/, "")}${path}`;
+
+const customerPagePath = "/customerpage";
+
+const normalizePath = (path: string) => {
+  const normalized = path.trim().toLowerCase();
+  if (normalized === "" || normalized === "/") {
+    return "/";
+  }
+
+  return normalized.replace(/\/+$/, "");
+};
 
 function MenuCard({
   item,
@@ -358,9 +420,16 @@ function App() {
     {},
   );
   const [isAuthPopupOpen, setIsAuthPopupOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [loginUserName, setLoginUserName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loggedInUserName, setLoggedInUserName] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [pridePoints, setPridePoints] = useState(0);
+  const [isSessionResolved, setIsSessionResolved] = useState(false);
+  const [currentPath, setCurrentPath] = useState(() =>
+    normalizePath(window.location.pathname),
+  );
   const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
   const [loginErrorMessage, setLoginErrorMessage] = useState<string | null>(null);
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
@@ -373,18 +442,42 @@ function App() {
   const [selectedLocationId, setSelectedLocationId] = useState<number | "">("");
   const [pickupType, setPickupType] =
     useState<(typeof pickupOptions)[number]>("In Store");
-  const [paymentMethod, setPaymentMethod] = useState(paymentPlaceholder);
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderErrorMessage, setOrderErrorMessage] = useState<string | null>(null);
   const [orderSuccessMessageVisible, setOrderSuccessMessageVisible] =
     useState(false);
+  const [featuredMenuItems, setFeaturedMenuItems] = useState<MenuItem[]>(
+    featuredDrinks,
+  );
+  const [drinkMenuItems, setDrinkMenuItems] = useState<MenuItem[]>(drinks);
+  const [sweetCrepeMenuItems, setSweetCrepeMenuItems] = useState<MenuItem[]>(
+    sweetCrepes,
+  );
+  const [savoryCrepeMenuItems, setSavoryCrepeMenuItems] = useState<MenuItem[]>(
+    savoryCrepes,
+  );
+  const [bagelMenuItems, setBagelMenuItems] = useState<MenuItem[]>(bagels);
   const swipeStartX = useRef<number | null>(null);
   const swipeDeltaX = useRef(0);
   const closeCheckoutTimer = useRef<number | null>(null);
   const authControlRef = useRef<HTMLDivElement | null>(null);
+  const isCustomerPage = currentPath === customerPagePath;
+  const displayMenuItems = [
+    ...drinkMenuItems,
+    ...sweetCrepeMenuItems,
+    ...savoryCrepeMenuItems,
+    ...bagelMenuItems,
+  ];
+  const displayMenuItemByName = new Map(
+    displayMenuItems.map((item) => [
+      item.name,
+      { ...item, unitPrice: parsePrice(item.price) },
+    ]),
+  );
   const cartSummaryItems: CartSummaryItem[] = Object.entries(cartItemsByName)
     .map(([name, quantity]) => {
-      const catalogItem = menuItemByName.get(name);
+      const catalogItem = displayMenuItemByName.get(name);
       if (!catalogItem || quantity < 1) {
         return null;
       }
@@ -407,17 +500,21 @@ function App() {
     0,
   );
 
-  const currentCarouselItem = allMenuItems[carouselIndex];
+  const carouselMenuItems = displayMenuItems.length > 0 ? displayMenuItems : drinks;
+  const currentCarouselItem = carouselMenuItems[carouselIndex];
   const goToPreviousCarouselItem = () =>
     setCarouselIndex((previous) =>
-      previous === 0 ? allMenuItems.length - 1 : previous - 1,
+      previous === 0 ? carouselMenuItems.length - 1 : previous - 1,
     );
   const goToNextCarouselItem = () =>
-    setCarouselIndex((previous) => (previous + 1) % allMenuItems.length);
+    setCarouselIndex((previous) => (previous + 1) % carouselMenuItems.length);
 
   const previousCarouselItem =
-    allMenuItems[(carouselIndex - 1 + allMenuItems.length) % allMenuItems.length];
-  const nextCarouselItem = allMenuItems[(carouselIndex + 1) % allMenuItems.length];
+    carouselMenuItems[
+      (carouselIndex - 1 + carouselMenuItems.length) % carouselMenuItems.length
+    ];
+  const nextCarouselItem =
+    carouselMenuItems[(carouselIndex + 1) % carouselMenuItems.length];
 
   const resetSwipeState = () => {
     swipeStartX.current = null;
@@ -459,11 +556,165 @@ function App() {
 
   const toggleAuthPopup = () => {
     setLoginErrorMessage(null);
+    setIsUserMenuOpen(false);
     setIsAuthPopupOpen((previous) => !previous);
   };
 
+  const navigateToPath = (path: string) => {
+    const normalizedPath = normalizePath(path);
+    const currentLocationPath = normalizePath(window.location.pathname);
+    if (currentLocationPath !== normalizedPath) {
+      window.history.pushState({}, "", normalizedPath);
+    }
+
+    setCurrentPath(normalizedPath);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
+  const handleUserIconClick = () => {
+    if (loggedInUserName) {
+      setIsAuthPopupOpen(false);
+      setIsUserMenuOpen((previous) => !previous);
+      return;
+    }
+
+    toggleAuthPopup();
+  };
+
+  const handleAccountClick = () => {
+    setIsUserMenuOpen(false);
+    navigateToPath(customerPagePath);
+  };
+
+  const handleLogOut = async () => {
+    setIsUserMenuOpen(false);
+    setIsAuthPopupOpen(false);
+    setLoginErrorMessage(null);
+
+    try {
+      await fetch(buildApiUrl("/api/authentication/logout"), {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Ignore logout transport errors and clear local session state anyway.
+    } finally {
+      setLoggedInUserName(null);
+      setCurrentUserId(null);
+      setPridePoints(0);
+      setLoginPassword("");
+      setIsSessionResolved(true);
+      navigateToPath("/");
+    }
+  };
+
   useEffect(() => {
-    if (!isAuthPopupOpen) {
+    const handlePopState = () => {
+      setCurrentPath(normalizePath(window.location.pathname));
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadActiveSession = async () => {
+      try {
+        const response = await fetch(buildApiUrl("/api/authentication/me"), {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          if (isMounted) {
+            setLoggedInUserName(null);
+            setCurrentUserId(null);
+            setPridePoints(0);
+            setIsSessionResolved(true);
+          }
+          return;
+        }
+
+        const user = (await response.json()) as AuthenticationUserDto;
+        if (!isMounted) {
+          return;
+        }
+
+        setLoggedInUserName(user.userName);
+        setCurrentUserId(user.id);
+        setPridePoints(user.pridePoints ?? 0);
+        setIsSessionResolved(true);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setLoggedInUserName(null);
+        setCurrentUserId(null);
+        setPridePoints(0);
+        setIsSessionResolved(true);
+      }
+    };
+
+    void loadActiveSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUserPridePoints = async () => {
+      if (currentUserId === null) {
+        return;
+      }
+
+      try {
+        const response = await fetch(buildApiUrl(`/api/users/${currentUserId}`), {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const user = (await response.json()) as AuthenticationUserDto;
+        if (!isMounted) {
+          return;
+        }
+
+        setPridePoints(user.pridePoints ?? 0);
+      } catch {
+        // Keep existing pride points when user profile lookup fails.
+      }
+    };
+
+    void loadUserPridePoints();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!isSessionResolved) {
+      return;
+    }
+
+    if (!isCustomerPage || loggedInUserName) {
+      return;
+    }
+
+    navigateToPath("/");
+  }, [isCustomerPage, isSessionResolved, loggedInUserName]);
+
+  useEffect(() => {
+    if (!isAuthPopupOpen && !isUserMenuOpen) {
       return;
     }
 
@@ -478,13 +729,115 @@ function App() {
       }
 
       setIsAuthPopupOpen(false);
+      setIsUserMenuOpen(false);
     };
 
     document.addEventListener("pointerdown", handleOutsidePointerDown);
     return () => {
       document.removeEventListener("pointerdown", handleOutsidePointerDown);
     };
-  }, [isAuthPopupOpen]);
+  }, [isAuthPopupOpen, isUserMenuOpen]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMenuItems = async () => {
+      try {
+        const response = await fetch(buildApiUrl("/api/menuitems"), {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Menu items request failed (${response.status})`);
+        }
+
+        const apiMenuItems = (await response.json()) as ApiMenuItemDto[];
+        if (!isMounted || apiMenuItems.length === 0) {
+          return;
+        }
+
+        const mappedItems = apiMenuItems.map((item) => {
+          const normalizedName = normalizeMenuItemName(item.itemName);
+          return {
+            type: item.type,
+            featured: item.featured,
+            menuItem: {
+              name: normalizedName,
+              description: item.description,
+              price: `$${item.price.toFixed(2)}`,
+              image: menuItemImages[normalizedName] ?? coffeeBag,
+            },
+          };
+        });
+
+        const nextDrinkItems = mappedItems
+          .filter((item) => item.type.toLowerCase() === "drink")
+          .map((item) => item.menuItem);
+
+        const foodItems = mappedItems
+          .filter((item) => item.type.toLowerCase() !== "drink")
+          .map((item) => item.menuItem);
+
+        const nextSweetCrepeItems = foodItems.filter((item) =>
+          sweetCrepeItemNames.has(item.name),
+        );
+        const nextSavoryCrepeItems = foodItems.filter((item) =>
+          savoryCrepeItemNames.has(item.name),
+        );
+        const nextBagelItems = foodItems.filter((item) =>
+          bagelItemNames.has(item.name),
+        );
+        const nextOtherFoodItems = foodItems.filter(
+          (item) =>
+            !sweetCrepeItemNames.has(item.name) &&
+            !savoryCrepeItemNames.has(item.name) &&
+            !bagelItemNames.has(item.name),
+        );
+
+        const nextFeaturedItems = mappedItems
+          .filter((item) => item.featured)
+          .map((item) => item.menuItem);
+
+        setDrinkMenuItems(nextDrinkItems.length > 0 ? nextDrinkItems : drinks);
+        setSweetCrepeMenuItems(
+          nextSweetCrepeItems.length > 0 ? nextSweetCrepeItems : sweetCrepes,
+        );
+        setSavoryCrepeMenuItems(
+          nextSavoryCrepeItems.length + nextOtherFoodItems.length > 0
+            ? [...nextSavoryCrepeItems, ...nextOtherFoodItems]
+            : savoryCrepes,
+        );
+        setBagelMenuItems(nextBagelItems.length > 0 ? nextBagelItems : bagels);
+        setFeaturedMenuItems(
+          nextFeaturedItems.length > 0 ? nextFeaturedItems : featuredDrinks,
+        );
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setDrinkMenuItems(drinks);
+        setSweetCrepeMenuItems(sweetCrepes);
+        setSavoryCrepeMenuItems(savoryCrepes);
+        setBagelMenuItems(bagels);
+        setFeaturedMenuItems(featuredDrinks);
+      }
+    };
+
+    void loadMenuItems();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (carouselIndex < carouselMenuItems.length) {
+      return;
+    }
+
+    setCarouselIndex(0);
+  }, [carouselIndex, carouselMenuItems.length]);
 
   const isInCart = (itemName: string) => (cartItemsByName[itemName] ?? 0) > 0;
 
@@ -607,10 +960,18 @@ function App() {
       return;
     }
 
+    if (!paymentMethod) {
+      setOrderErrorMessage("Please select a payment option.");
+      return;
+    }
+
     setIsSubmittingOrder(true);
     setOrderErrorMessage(null);
 
     try {
+      const selectedPaymentOption = paymentMethodOptions.find(
+        (option) => option.value === paymentMethod,
+      );
       const response = await fetch(buildApiUrl("/api/orders"), {
         method: "POST",
         credentials: "include",
@@ -620,7 +981,7 @@ function App() {
         body: JSON.stringify({
           locationId: selectedLocationId,
           pickupType,
-          paymentMethod,
+          paymentMethod: selectedPaymentOption?.label ?? paymentMethod,
           total: Number(cartSubtotal.toFixed(2)),
           items: cartSummaryItems.map((item) => ({
             name: item.name,
@@ -707,8 +1068,12 @@ function App() {
 
       const user = (await response.json()) as AuthenticationUserDto;
       setLoggedInUserName(user.userName);
+      setCurrentUserId(user.id);
+      setPridePoints(user.pridePoints ?? 0);
+      setIsSessionResolved(true);
       setLoginPassword("");
       setIsAuthPopupOpen(false);
+      setIsUserMenuOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Login failed";
       setLoginErrorMessage(message);
@@ -727,12 +1092,24 @@ function App() {
 
         <div className="nav-area">
           <div className="nav-menu">
-            <nav className="nav-links">
-              <a href="#featured">Featured</a>
-              <a href="#drinks">Drinks</a>
-              <a href="#food">Food</a>
-              <a href="#about">About</a>
-            </nav>
+            {isCustomerPage ? (
+              <nav className="nav-links">
+                <button
+                  type="button"
+                  className="nav-link-btn"
+                  onClick={() => navigateToPath("/")}
+                >
+                  Home
+                </button>
+              </nav>
+            ) : (
+              <nav className="nav-links">
+                <a href="#featured">Featured</a>
+                <a href="#drinks">Drinks</a>
+                <a href="#food">Food</a>
+                <a href="#about">About</a>
+              </nav>
+            )}
           </div>
 
           <div className="nav-actions">
@@ -740,9 +1117,13 @@ function App() {
               <button
                 type="button"
                 className="icon-button"
-                onClick={toggleAuthPopup}
-                aria-label="Open account login"
-                aria-expanded={isAuthPopupOpen}
+                onClick={handleUserIconClick}
+                aria-label={
+                  loggedInUserName
+                    ? "Open account options"
+                    : "Open account login"
+                }
+                aria-expanded={loggedInUserName ? isUserMenuOpen : isAuthPopupOpen}
               >
                 <CircleUserRound size={24} />
               </button>
@@ -750,7 +1131,30 @@ function App() {
                 <span className="auth-user-name">{loggedInUserName}</span>
               ) : null}
 
-              {isAuthPopupOpen ? (
+              {loggedInUserName && isUserMenuOpen ? (
+                <div className="user-action-menu">
+                  <button
+                    type="button"
+                    className="user-action-item"
+                    onClick={handleAccountClick}
+                  >
+                    <CircleUserRound size={16} />
+                    <span>Account</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="user-action-item"
+                    onClick={() => {
+                      void handleLogOut();
+                    }}
+                  >
+                    <LogOut size={16} />
+                    <span>Log Out</span>
+                  </button>
+                </div>
+              ) : null}
+
+              {!loggedInUserName && isAuthPopupOpen ? (
                 <form
                   className="auth-popup"
                   onSubmit={(event) => {
@@ -804,7 +1208,21 @@ function App() {
         </div>
       </header>
 
-      <main>
+      {isCustomerPage ? (
+        <CustomerPage
+          userName={loggedInUserName ?? "Guest"}
+          pridePoints={pridePoints}
+          featuredItems={featuredMenuItems}
+          isInCart={isInCart}
+          onToggleCartItem={toggleCartItem}
+          buildApiUrl={buildApiUrl}
+          resolveMenuItemImage={(itemName) =>
+            menuItemImages[normalizeMenuItemName(itemName)] ?? logo
+          }
+        />
+      ) : null}
+
+      <main style={{ display: isCustomerPage ? "none" : undefined }}>
         <section className="hero">
           <div className="hero-text">
             <p className="hero-kicker">Bold Coffee. Lion Energy.</p>
@@ -898,7 +1316,7 @@ function App() {
           </div>
 
           <div className="featured-grid">
-            {featuredDrinks.map((drink) => (
+            {featuredMenuItems.map((drink) => (
               <div className="featured-card" key={drink.name}>
                 <div className="featured-card-main">
                   <img src={drink.image} alt={drink.name} className="featured-image" />
@@ -937,7 +1355,7 @@ function App() {
             <h2>Handcrafted favorites</h2>
           </div>
           <div className="menu-grid">
-            {drinks.map((item) => (
+            {drinkMenuItems.map((item) => (
               <MenuCard
                 key={item.name}
                 item={item}
@@ -954,7 +1372,7 @@ function App() {
             <h2>Sweet, warm, and indulgent</h2>
           </div>
           <div className="menu-grid">
-            {sweetCrepes.map((item) => (
+            {sweetCrepeMenuItems.map((item) => (
               <MenuCard
                 key={item.name}
                 item={item}
@@ -971,7 +1389,7 @@ function App() {
             <h2>Fresh and filling choices</h2>
           </div>
           <div className="menu-grid">
-            {savoryCrepes.map((item) => (
+            {savoryCrepeMenuItems.map((item) => (
               <MenuCard
                 key={item.name}
                 item={item}
@@ -988,7 +1406,7 @@ function App() {
             <h2>Toasted classics and specialties</h2>
           </div>
           <div className="menu-grid">
-            {bagels.map((item) => (
+            {bagelMenuItems.map((item) => (
               <MenuCard
                 key={item.name}
                 item={item}
@@ -1174,7 +1592,7 @@ function App() {
                     {!isLocationsLoading
                       ? locations.map((location) => (
                           <option key={location.id} value={location.id}>
-                            {location.name}
+                            {location.address}
                           </option>
                         ))
                       : null}
@@ -1201,16 +1619,40 @@ function App() {
                   </select>
                 </label>
 
-                <label className="checkout-field">
+                <div className="checkout-field">
                   <span>Payment:</span>
-                  <select
-                    value={paymentMethod}
-                    onChange={(event) => setPaymentMethod(event.target.value)}
-                    disabled={isSubmittingOrder}
-                  >
-                    <option value={paymentPlaceholder}>{paymentPlaceholder}</option>
-                  </select>
-                </label>
+                  <div className="payment-methods-row">
+                    {paymentMethodOptions.map((option) => {
+                      const isSelected = paymentMethod === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`payment-method-btn ${
+                            isSelected ? "selected" : ""
+                          }`}
+                          onClick={() => {
+                            setPaymentMethod(option.value);
+                            setOrderErrorMessage(null);
+                          }}
+                          disabled={isSubmittingOrder}
+                          aria-label={`Select ${option.label} payment`}
+                        >
+                          <img
+                            src={option.image}
+                            alt={option.label}
+                            className="payment-method-icon"
+                          />
+                          {isSelected ? (
+                            <span className="payment-selected-badge" aria-hidden="true">
+                              <Check size={12} />
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 <button
                   type="button"
@@ -1222,6 +1664,7 @@ function App() {
                     isSubmittingOrder ||
                     isLocationsLoading ||
                     selectedLocationId === "" ||
+                    !paymentMethod ||
                     cartSummaryItems.length === 0
                   }
                 >

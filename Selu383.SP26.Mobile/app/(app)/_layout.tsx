@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { Redirect, Tabs, useRouter } from 'expo-router';
-import { CalendarCheck2, ChevronDown, House, Minus, Plus, ShoppingCart, ThumbsUp, User, Utensils, X } from 'lucide-react-native';
+import { CalendarCheck2, Check, ChevronDown, House, Minus, Plus, ShoppingCart, ThumbsUp, User, Utensils, X } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -12,7 +12,29 @@ import { BrandColors } from '@/constants/theme';
 import { locationsApi, ordersApi, type LocationDto } from '@/lib/api';
 
 const pickupOptions = ['In Store', 'Drive Through'] as const;
-const paymentPlaceholder = 'Integrate 3rd Party Payment Processing Here';
+
+const paymentMethodOptions = [
+  {
+    value: 'masterpay',
+    label: 'MasterPay',
+    image: require('@/assets/images/masterpay.png'),
+  },
+  {
+    value: 'visapay',
+    label: 'VisaPay',
+    image: require('@/assets/images/visapay.png'),
+  },
+  {
+    value: 'applepay',
+    label: 'ApplePay',
+    image: require('@/assets/images/applepay.png'),
+  },
+  {
+    value: 'gpay',
+    label: 'GPay',
+    image: require('@/assets/images/gpay.png'),
+  },
+] as const;
 
 type DropdownOption = {
   value: string;
@@ -107,8 +129,8 @@ export default function AppLayout() {
   const [locationsErrorMessage, setLocationsErrorMessage] = useState<string | null>(null);
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [pickupType, setPickupType] = useState<(typeof pickupOptions)[number]>('In Store');
-  const [paymentMethod, setPaymentMethod] = useState(paymentPlaceholder);
-  const [activeDropdown, setActiveDropdown] = useState<'location' | 'pickup' | 'payment' | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [activeDropdown, setActiveDropdown] = useState<'location' | 'pickup' | null>(null);
   const [isSubmittingOrder, setSubmittingOrder] = useState(false);
   const [orderErrorMessage, setOrderErrorMessage] = useState<string | null>(null);
   const [orderSuccessVisible, setOrderSuccessVisible] = useState(false);
@@ -118,7 +140,7 @@ export default function AppLayout() {
     () =>
       locations.map((location) => ({
         value: String(location.id),
-        label: location.name,
+        label: location.address,
       })),
     [locations]
   );
@@ -126,16 +148,6 @@ export default function AppLayout() {
   const selectedLocationLabel = useMemo(
     () => locationOptions.find((option) => option.value === selectedLocationId)?.label ?? '',
     [locationOptions, selectedLocationId]
-  );
-
-  const paymentOptions = useMemo<DropdownOption[]>(
-    () => [
-      {
-        value: paymentPlaceholder,
-        label: paymentPlaceholder,
-      },
-    ],
-    []
   );
 
   useEffect(() => {
@@ -204,14 +216,20 @@ export default function AppLayout() {
       return;
     }
 
+    if (!paymentMethod) {
+      setOrderErrorMessage('Please select a payment option.');
+      return;
+    }
+
     setSubmittingOrder(true);
     setOrderErrorMessage(null);
 
     try {
+      const selectedPaymentOption = paymentMethodOptions.find((option) => option.value === paymentMethod);
       await ordersApi.create({
         locationId: Number(selectedLocationId),
         pickupType,
-        paymentMethod,
+        paymentMethod: selectedPaymentOption?.label ?? paymentMethod,
         total: Number(subtotal.toFixed(2)),
         items: cartItems.map((item) => ({
           name: item.name,
@@ -451,27 +469,45 @@ export default function AppLayout() {
                   }}
                 />
 
-                <DropdownField
-                  label="Payment"
-                  valueLabel={paymentMethod}
-                  placeholder={paymentPlaceholder}
-                  options={paymentOptions}
-                  isOpen={activeDropdown === 'payment'}
-                  disabled={isSubmittingOrder}
-                  onToggle={() => setActiveDropdown((current) => (current === 'payment' ? null : 'payment'))}
-                  onSelect={(value) => {
-                    setPaymentMethod(value);
-                    setActiveDropdown(null);
-                  }}
-                />
+                <View style={styles.checkoutFieldBlock}>
+                  <ThemedText style={styles.checkoutFieldLabel}>Payment</ThemedText>
+                  <View style={styles.paymentOptionsRow}>
+                    {paymentMethodOptions.map((option) => {
+                      const isSelected = paymentMethod === option.value;
+                      return (
+                        <Pressable
+                          key={option.value}
+                          style={({ pressed }) => [
+                            styles.paymentOptionButton,
+                            isSelected && styles.paymentOptionButtonSelected,
+                            pressed && !isSubmittingOrder && styles.paymentOptionButtonPressed,
+                          ]}
+                          disabled={isSubmittingOrder}
+                          onPress={() => {
+                            setPaymentMethod(option.value);
+                            setOrderErrorMessage(null);
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Select ${option.label} payment`}>
+                          <Image source={option.image} style={styles.paymentOptionImage} contentFit="contain" />
+                          {isSelected ? (
+                            <View style={styles.paymentSelectedBadge}>
+                              <Check size={12} color="#ffffff" />
+                            </View>
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
 
                 <Pressable
                   style={({ pressed }) => [
                     styles.orderButton,
                     pressed && styles.modalActionPressed,
-                    (isSubmittingOrder || !selectedLocationId || cartItems.length === 0) && styles.disabledButton,
+                    (isSubmittingOrder || !selectedLocationId || !paymentMethod || cartItems.length === 0) && styles.disabledButton,
                   ]}
-                  disabled={isSubmittingOrder || !selectedLocationId || cartItems.length === 0}
+                  disabled={isSubmittingOrder || !selectedLocationId || !paymentMethod || cartItems.length === 0}
                   onPress={() => {
                     void handlePlaceOrder();
                   }}>
@@ -805,6 +841,46 @@ const styles = StyleSheet.create({
   },
   dropdownOptionText: {
     color: BrandColors.darkAccent,
+  },
+  paymentOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  paymentOptionButton: {
+    width: '23%',
+    position: 'relative',
+    height: 92,
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  paymentOptionButtonSelected: {
+    borderColor: '#16a34a',
+  },
+  paymentOptionButtonPressed: {
+    opacity: 0.84,
+  },
+  paymentOptionImage: {
+    width: '72%',
+    height: '58%',
+  },
+  paymentSelectedBadge: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#16a34a',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   orderButton: {
     marginTop: 8,

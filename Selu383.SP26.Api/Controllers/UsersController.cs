@@ -26,6 +26,7 @@ public class UsersController : ControllerBase
             {
                 Id = x.Id,
                 UserName = x.UserName ?? string.Empty,
+                PridePoints = x.RewardsTotal,
                 FirstName = x.FirstName,
                 LastName = x.LastName,
                 Address = x.Address,
@@ -47,6 +48,7 @@ public class UsersController : ControllerBase
             {
                 Id = x.Id,
                 UserName = x.UserName ?? string.Empty,
+                PridePoints = x.RewardsTotal,
                 FirstName = x.FirstName,
                 LastName = x.LastName,
                 Address = x.Address,
@@ -78,7 +80,8 @@ public class UsersController : ControllerBase
             Address = dto.Address,
             City = dto.City,
             State = dto.State,
-            ZipCode = dto.ZipCode
+            ZipCode = dto.ZipCode,
+            RewardsTotal = dto.PridePoints
         };
 
         var createResult = await userManager.CreateAsync(newUser, dto.Password);
@@ -106,6 +109,7 @@ public class UsersController : ControllerBase
         {
             Id = newUser.Id,
             UserName = newUser.UserName,
+            PridePoints = newUser.RewardsTotal,
             FirstName = newUser.FirstName,
             LastName = newUser.LastName,
             Address = newUser.Address,
@@ -139,6 +143,7 @@ public class UsersController : ControllerBase
         user.City = dto.City;
         user.State = dto.State;
         user.ZipCode = dto.ZipCode;
+        user.RewardsTotal = dto.PridePoints;
 
         var result = await userManager.UpdateAsync(user);
         if (!result.Succeeded)
@@ -150,6 +155,7 @@ public class UsersController : ControllerBase
         {
             Id = user.Id,
             UserName = user.UserName ?? string.Empty,
+            PridePoints = user.RewardsTotal,
             FirstName = user.FirstName,
             LastName = user.LastName,
             Address = user.Address,

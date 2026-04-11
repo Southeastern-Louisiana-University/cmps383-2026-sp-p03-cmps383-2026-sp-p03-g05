@@ -1,12 +1,12 @@
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Selu383.SP26.Api.Features.Auth;
 using Selu383.SP26.Api.Features.Items;
 using Selu383.SP26.Api.Features.Locations;
+using Selu383.SP26.Api.Features.Orders;
 using Selu383.SP26.Api.Features.Payments;
 using Selu383.SP26.Api.Features.Rewards;
-using System.Data;
 
 namespace Selu383.SP26.Api.Data;
 
@@ -14,13 +14,16 @@ public class DataContext : IdentityDbContext<User, Role, int, IdentityUserClaim<
 {
     public DataContext(DbContextOptions<DataContext> options) : base(options)
     {
-        
     }
 
     public DbSet<Location> Locations { get; set; }
     public DbSet<Payment> Payments { get; set; }
     public DbSet<Reward> Rewards { get; set; }
     public DbSet<MenuItem> MenuItems { get; set; }
+    public DbSet<Order> Orders { get; set; }
+    public DbSet<OrderStatus> OrderStatuses { get; set; }
+    public DbSet<OrderMenuItem> OrderMenuItems { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

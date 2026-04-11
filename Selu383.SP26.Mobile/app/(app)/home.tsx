@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { HeartOff, Square, SquareCheck } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -8,18 +8,46 @@ import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/auth-context';
 import { useCart } from '@/context/cart-context';
 import { BrandColors } from '@/constants/theme';
-import { ordersApi, type OrderHistoryDto, type OrderItemDto } from '@/lib/api';
+import { menuItemsApi, ordersApi, usersApi, type OrderHistoryDto, type OrderItemDto } from '@/lib/api';
 
 const favoriteImageByName: Record<string, number> = {
   'Iced Latte': require('@/assets/images/iced late.png'),
+  'Black & White Cold Brew': require('@/assets/images/black white cold brew.png'),
+  Downtowner: require('@/assets/images/downtowner.png'),
   'Strawberry Fields': require('@/assets/images/strawberry fields.png'),
   'Travis Special': require('@/assets/images/travis special.png'),
 };
 
 const emptyFavoriteSlots = [0, 1, 2];
 const levels = [1, 2, 3, 4, 5];
-const completedLevels = 2;
-const featuredItems = [
+
+function getCompletedLevels(pridePoints: number) {
+  if (pridePoints < 0) {
+    return 0;
+  }
+  if (pridePoints <= 100) {
+    return 1;
+  }
+  if (pridePoints <= 200) {
+    return 2;
+  }
+  if (pridePoints <= 300) {
+    return 3;
+  }
+  if (pridePoints <= 400) {
+    return 4;
+  }
+  return 5;
+}
+
+type FeaturedItem = {
+  name: string;
+  price: string;
+  unitPrice: number;
+  image: number;
+};
+
+const fallbackFeaturedItems: FeaturedItem[] = [
   {
     name: 'Iced Latte',
     price: '$5.50',
@@ -38,7 +66,7 @@ const featuredItems = [
     unitPrice: 14,
     image: require('@/assets/images/travis special.png'),
   },
-] as const;
+];
 
 function resolveFavoriteImage(item: OrderItemDto) {
   const localImage = favoriteImageByName[item.name];
@@ -69,10 +97,43 @@ function formatOrderDate(dateText: string) {
 export default function HomeScreen() {
   const { user } = useAuth();
   const { isInCart, toggleCartItem } = useCart();
-  const pridePoints = user?.pridePoints ?? 0;
+  const [pridePoints, setPridePoints] = useState(user?.pridePoints ?? 0);
+  const completedLevels = getCompletedLevels(pridePoints);
 
-  const [latestOrder, setLatestOrder] = useState<OrderHistoryDto | null>(null);
+  const [recentOrders, setRecentOrders] = useState<OrderHistoryDto[]>([]);
   const [isLoadingOrderHistory, setIsLoadingOrderHistory] = useState(false);
+  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>(fallbackFeaturedItems);
+
+  useEffect(() => {
+    setPridePoints(user?.pridePoints ?? 0);
+  }, [user?.pridePoints]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCurrentUserPridePoints = async () => {
+      if (!user || user.id <= 0) {
+        return;
+      }
+
+      try {
+        const userProfile = await usersApi.getById(user.id);
+        if (!isMounted) {
+          return;
+        }
+
+        setPridePoints(userProfile.pridePoints ?? 0);
+      } catch {
+        // Keep existing value from auth/session response when users API fails.
+      }
+    };
+
+    void loadCurrentUserPridePoints();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     let isMounted = true;
@@ -85,13 +146,13 @@ export default function HomeScreen() {
           return;
         }
 
-        setLatestOrder(orderHistory[0] ?? null);
+        setRecentOrders(orderHistory.slice(0, 3));
       } catch {
         if (!isMounted) {
           return;
         }
 
-        setLatestOrder(null);
+        setRecentOrders([]);
       } finally {
         if (isMounted) {
           setIsLoadingOrderHistory(false);
@@ -106,13 +167,43 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const orderCards = useMemo(() => {
-    if (!latestOrder) {
-      return [] as OrderItemDto[];
-    }
+  useEffect(() => {
+    let isMounted = true;
 
-    return latestOrder.items.slice(0, 3);
-  }, [latestOrder]);
+    const loadFeaturedItems = async () => {
+      try {
+        const menuItems = await menuItemsApi.list();
+        if (!isMounted) {
+          return;
+        }
+
+        const mappedFeaturedItems = menuItems
+          .filter((item) => item.featured)
+          .map((item) => ({
+            name: item.itemName,
+            unitPrice: item.price,
+            price: `$${item.price.toFixed(2)}`,
+            image: favoriteImageByName[item.itemName] ?? require('@/assets/images/logo-round.png'),
+          }));
+
+        if (mappedFeaturedItems.length > 0) {
+          setFeaturedItems(mappedFeaturedItems);
+        }
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setFeaturedItems(fallbackFeaturedItems);
+      }
+    };
+
+    void loadFeaturedItems();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <ThemedView style={styles.screen}>
@@ -153,7 +244,7 @@ export default function HomeScreen() {
 
           {isLoadingOrderHistory ? (
             <ThemedText style={styles.helperText}>Loading your recent orders...</ThemedText>
-          ) : orderCards.length === 0 ? (
+          ) : recentOrders.length === 0 ? (
             <View style={styles.emptyFavoritesRow}>
               {emptyFavoriteSlots.map((slot) => (
                 <View key={slot} style={styles.emptyFavoriteSquare}>
@@ -162,24 +253,32 @@ export default function HomeScreen() {
               ))}
             </View>
           ) : (
-            <View style={styles.orderAgainContent}>
-              <View style={styles.orderHand}>
-                {orderCards.map((item, index) => (
-                  <View
-                    key={`${item.name}-${index}`}
-                    style={[
-                      styles.handCard,
-                      {
-                        left: index * 40,
-                        zIndex: index + 1,
-                        transform: [{ rotate: `${(index - 1) * 8}deg` }],
-                      },
-                    ]}>
-                    <Image source={resolveFavoriteImage(item)} style={styles.handImage} contentFit="cover" />
+            <View style={styles.recentOrdersList}>
+              {recentOrders.map((order) => {
+                const orderCards = order.items.slice(0, 3);
+                const useCardOffset = orderCards.length > 1;
+                return (
+                  <View key={order.id} style={styles.orderAgainContent}>
+                    <View style={styles.orderHand}>
+                      {orderCards.map((item, index) => (
+                        <View
+                          key={`${order.id}-${item.name}-${index}`}
+                          style={[
+                            styles.handCard,
+                            {
+                              left: useCardOffset ? index * 20 : 20,
+                              zIndex: index + 1,
+                              transform: [{ rotate: useCardOffset ? `${(index - 1) * 8}deg` : '0deg' }],
+                            },
+                          ]}>
+                          <Image source={resolveFavoriteImage(item)} style={styles.handImage} contentFit="cover" />
+                        </View>
+                      ))}
+                    </View>
+                    <ThemedText style={styles.orderDateText}>{formatOrderDate(order.orderedAt)}</ThemedText>
                   </View>
-                ))}
-              </View>
-              <ThemedText style={styles.orderDateText}>Order Date: {formatOrderDate(latestOrder!.orderedAt)}</ThemedText>
+                );
+              })}
             </View>
           )}
         </View>
@@ -304,21 +403,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#fffdf9',
   },
   orderAgainContent: {
+    flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     paddingTop: 2,
   },
+  recentOrdersList: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
   orderHand: {
     position: 'relative',
-    width: 176,
-    height: 126,
-    marginBottom: 8,
+    width: '100%',
+    maxWidth: 98,
+    height: 86,
+    marginBottom: 6,
   },
   handCard: {
     position: 'absolute',
     top: 0,
-    width: 96,
-    height: 122,
-    borderRadius: 12,
+    width: 56,
+    height: 82,
+    borderRadius: 10,
     backgroundColor: '#f7f4ef',
     borderWidth: 1,
     borderColor: BrandColors.accent,
@@ -335,8 +444,10 @@ const styles = StyleSheet.create({
   },
   orderDateText: {
     color: BrandColors.text,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 13,
   },
   featuredItemsRow: {
     flexDirection: 'row',

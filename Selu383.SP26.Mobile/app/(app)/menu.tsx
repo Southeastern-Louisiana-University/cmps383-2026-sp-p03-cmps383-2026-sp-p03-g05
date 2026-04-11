@@ -1,17 +1,28 @@
 import { Image } from 'expo-image';
 import { Square, SquareCheck } from 'lucide-react-native';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useCart } from '@/context/cart-context';
 import { BrandColors } from '@/constants/theme';
+import { menuItemsApi, type MenuItemDto } from '@/lib/api';
 
 type MenuItem = {
   name: string;
   description: string;
   price: string;
   image: number;
+};
+
+type MenuSection = {
+  title: string;
+  items: MenuItem[];
+};
+
+type ApiDisplayMenuItem = MenuItem & {
+  type: string;
 };
 
 const drinks: MenuItem[] = [
@@ -178,17 +189,107 @@ const bagels: MenuItem[] = [
   },
 ];
 
-const menuSections = [
+const fallbackMenuSections = [
   { title: 'Drinks', items: drinks },
   { title: 'Sweet Crepes', items: sweetCrepes },
   { title: 'Savory Crepes', items: savoryCrepes },
   { title: 'Bagels', items: bagels },
 ] as const;
 
+const fallbackAllMenuItems = [...drinks, ...sweetCrepes, ...savoryCrepes, ...bagels];
+const fallbackImageByName = Object.fromEntries(fallbackAllMenuItems.map((item) => [item.name, item.image])) as Record<
+  string,
+  number
+>;
+
+const sweetCrepeItemNames = new Set(sweetCrepes.map((item) => item.name));
+const savoryCrepeItemNames = new Set(savoryCrepes.map((item) => item.name));
+const bagelItemNames = new Set(bagels.map((item) => item.name));
+
+const normalizeMenuItemName = (value: string) => {
+  if (value.toLowerCase().includes('brulagel')) {
+    return 'Creme Brulagel';
+  }
+
+  return value;
+};
+
 const parsePrice = (value: string) => Number.parseFloat(value.replace(/[^0-9.]/g, '')) || 0;
 
 export default function MenuScreen() {
   const { isInCart, toggleCartItem } = useCart();
+  const [menuSections, setMenuSections] = useState<MenuSection[]>(
+    fallbackMenuSections.map((section) => ({ title: section.title, items: [...section.items] }))
+  );
+  const [isLoadingMenuItems, setIsLoadingMenuItems] = useState(false);
+  const [menuItemsError, setMenuItemsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMenuItems = async () => {
+      setIsLoadingMenuItems(true);
+      setMenuItemsError(null);
+
+      try {
+        const apiItems = await menuItemsApi.list();
+        if (!isMounted || apiItems.length === 0) {
+          return;
+        }
+
+        const mappedItems: ApiDisplayMenuItem[] = apiItems.map((item: MenuItemDto) => {
+          const normalizedName = normalizeMenuItemName(item.itemName);
+          const fallbackImage = fallbackImageByName[normalizedName];
+
+          return {
+            name: normalizedName,
+            description: item.description,
+            price: `$${item.price.toFixed(2)}`,
+            image: fallbackImage ?? require('@/assets/images/logo-round.png'),
+            type: item.type,
+          };
+        });
+
+        const drinksFromApi = mappedItems.filter((item) => item.type.toLowerCase() === 'drink');
+        const foodsFromApi = mappedItems.filter((item) => item.type.toLowerCase() !== 'drink');
+        const sweetFromApi = foodsFromApi.filter((item) => sweetCrepeItemNames.has(item.name));
+        const savoryFromApi = foodsFromApi.filter((item) => savoryCrepeItemNames.has(item.name));
+        const bagelsFromApi = foodsFromApi.filter((item) => bagelItemNames.has(item.name));
+        const otherFoodsFromApi = foodsFromApi.filter(
+          (item) =>
+            !sweetCrepeItemNames.has(item.name) &&
+            !savoryCrepeItemNames.has(item.name) &&
+            !bagelItemNames.has(item.name)
+        );
+
+        setMenuSections([
+          { title: 'Drinks', items: drinksFromApi },
+          { title: 'Sweet Crepes', items: sweetFromApi },
+          { title: 'Savory Crepes', items: [...savoryFromApi, ...otherFoodsFromApi] },
+          { title: 'Bagels', items: bagelsFromApi },
+        ]);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : 'Unable to load menu items.';
+        setMenuItemsError(message);
+      } finally {
+        if (isMounted) {
+          setIsLoadingMenuItems(false);
+        }
+      }
+    };
+
+    void loadMenuItems();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const populatedSections = useMemo(() => menuSections.filter((section) => section.items.length > 0), [menuSections]);
 
   return (
     <ThemedView style={styles.screen}>
@@ -197,9 +298,11 @@ export default function MenuScreen() {
           Menu
         </ThemedText>
         <ThemedText style={styles.subtitle}>All menu items from the web experience.</ThemedText>
+        {isLoadingMenuItems ? <ThemedText style={styles.helperText}>Loading menu items...</ThemedText> : null}
+        {menuItemsError ? <ThemedText style={styles.errorText}>{menuItemsError}</ThemedText> : null}
 
         <View style={styles.sectionList}>
-          {menuSections.map((section) => (
+          {populatedSections.map((section) => (
             <View key={section.title} style={styles.sectionBlock}>
               <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
                 {section.title}
@@ -266,6 +369,14 @@ const styles = StyleSheet.create({
   subtitle: {
     color: BrandColors.text,
     marginBottom: 18,
+  },
+  helperText: {
+    color: BrandColors.text,
+    marginBottom: 12,
+  },
+  errorText: {
+    color: '#9b2d2d',
+    marginBottom: 12,
   },
   sectionList: {
     gap: 16,
