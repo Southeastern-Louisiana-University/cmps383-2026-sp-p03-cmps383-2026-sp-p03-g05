@@ -3,6 +3,7 @@ import { Redirect, Tabs, useRouter } from 'expo-router';
 import { CalendarCheck2, Check, ChevronDown, House, Minus, Plus, ShoppingCart, User, Utensils, X } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandedLoadingScreen } from '@/components/branded-loading-screen';
 import { ThemedText } from '@/components/themed-text';
@@ -127,6 +128,7 @@ export default function AppLayout() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading, refreshSession } = useAuth();
   const { cartCount, cartItems, subtotal, clearCart, incrementItem, decrementItem, removeItem } = useCart();
+  const insets = useSafeAreaInsets();
 
   const [isCartModalVisible, setCartModalVisible] = useState(false);
   const [isCheckoutModalVisible, setCheckoutModalVisible] = useState(false);
@@ -342,7 +344,13 @@ export default function AppLayout() {
           header: () => <AppBanner cartCount={cartCount} onCartPress={() => setCartModalVisible(true)} />,
           tabBarActiveTintColor: BrandColors.primary,
           tabBarInactiveTintColor: BrandColors.primary,
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: [
+            styles.tabBar,
+            {
+              height: 74 + insets.bottom,
+              paddingBottom: Math.max(10, insets.bottom),
+            },
+          ],
           tabBarLabelStyle: styles.tabLabel,
           tabBarButton: ({ style, children, onPress, onLongPress, accessibilityState, accessibilityLabel, testID }) => (
             <Pressable
