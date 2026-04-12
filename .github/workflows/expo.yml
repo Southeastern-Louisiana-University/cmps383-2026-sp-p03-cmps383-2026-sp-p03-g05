@@ -41,9 +41,19 @@ jobs:
         with:
           EAS_LOCAL_BUILD_ARTIFACTS_DIR: ${{ runner.temp }}
 
+      - name: Validate mobile API base URL secret
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+        run: |
+          if [ -z "$EXPO_PUBLIC_API_BASE_URL" ]; then
+            echo "::error::EXPO_PUBLIC_API_BASE_URL secret is missing or empty."
+            exit 1
+          fi
+          echo "EXPO_PUBLIC_API_BASE_URL is configured."
+
       - name: 🚀 Build app
         env:
-          EXPO_PUBLIC_API_BASE_URL: ${{ vars.EXPO_PUBLIC_API_BASE_URL }}
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
         run: cd ./Selu383.SP26.Mobile/ && eas build -p android --profile production --non-interactive --local
 
       - name: 🛳️ Make Release

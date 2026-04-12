@@ -121,6 +121,8 @@ const formatTimeLabel = (value: string) => {
   return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 };
 
+const reservationSuccessPopupDurationMs = 3000;
+
 export default function ReservationsModal({
   isOpen,
   isAuthenticated,
@@ -221,6 +223,21 @@ export default function ReservationsModal({
   const canGoPreviousMonth = monthKey(visibleMonth) !== monthKey(minSelectableMonth);
   const canGoNextMonth = monthKey(visibleMonth) !== monthKey(maxSelectableMonth);
   const hasAvailableSlots = availableSlots.some((slot) => slot.isAvailable);
+
+  useEffect(() => {
+    if (!isReservationSuccessVisible) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsReservationSuccessVisible(false);
+      onClose();
+    }, reservationSuccessPopupDurationMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isReservationSuccessVisible, onClose]);
 
   useEffect(() => {
     if (!selectedDate) {
@@ -815,14 +832,17 @@ export default function ReservationsModal({
               <p className="checkout-error">{reservationErrorMessage}</p>
             ) : null}
 
-            {isReservationSuccessVisible ? (
-              <div className="checkout-success reservation-success">
-                <CheckCircle2 size={78} strokeWidth={2.2} />
-                <p>Payment processed successfully. Your reservation has been saved!</p>
-              </div>
-            ) : null}
           </section>
         )}
+
+        {isAuthenticated && isReservationSuccessVisible ? (
+          <div className="reservation-success-overlay" role="status" aria-live="polite">
+            <div className="checkout-success reservation-success reservation-success-popup">
+              <CheckCircle2 size={78} strokeWidth={2.2} />
+              <p>Payment processed successfully. Your reservation has been saved!</p>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

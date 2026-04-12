@@ -23,6 +23,25 @@ type OrderHistoryDto = {
   items: OrderHistoryItemDto[];
 };
 
+type ReservationDto = {
+  id: number;
+  locationId: number;
+  date: string;
+  time: string;
+};
+
+type LocationDto = {
+  id: number;
+  name?: string | null;
+  address?: string | null;
+};
+
+type UpcomingReservation = {
+  id: number;
+  locationLabel: string;
+  dateTimeLabel: string;
+};
+
 type CustomerPageProps = {
   userName: string;
   pridePoints: number;
@@ -68,6 +87,41 @@ const formatOrderDate = (value: string) => {
   });
 };
 
+const parseReservationDateTime = (dateText: string, timeText: string) => {
+  const datePart = dateText.split("T")[0]?.trim();
+  const timePart = timeText.trim();
+  if (!datePart || !timePart) {
+    return null;
+  }
+
+  const timeTokens = timePart.split(":");
+  if (timeTokens.length < 2) {
+    return null;
+  }
+
+  const hour = String(timeTokens[0] ?? "").padStart(2, "0");
+  const minute = String(timeTokens[1] ?? "").padStart(2, "0");
+  const second = String(timeTokens[2] ?? "00")
+    .padStart(2, "0")
+    .slice(0, 2);
+
+  const parsed = new Date(`${datePart}T${hour}:${minute}:${second}`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+};
+
+const formatReservationDateTime = (dateValue: Date) =>
+  dateValue.toLocaleString("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
 export default function CustomerPage({
   userName,
   pridePoints,
@@ -79,6 +133,11 @@ export default function CustomerPage({
 }: CustomerPageProps) {
   const [recentOrders, setRecentOrders] = useState<OrderHistoryDto[]>([]);
   const [isLoadingOrderHistory, setIsLoadingOrderHistory] = useState(false);
+  const [upcomingReservations, setUpcomingReservations] = useState<
+    UpcomingReservation[]
+  >([]);
+  const [isLoadingUpcomingReservations, setIsLoadingUpcomingReservations] =
+    useState(false);
   const completedLevels = getCompletedLevels(pridePoints);
 
   useEffect(() => {
@@ -123,6 +182,112 @@ export default function CustomerPage({
     };
 
     void loadOrderHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [buildApiUrl]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUpcomingReservations = async () => {
+      setIsLoadingUpcomingReservations(true);
+      try {
+        const [reservationsResponse, locationsResponse] = await Promise.all([
+          fetch(buildApiUrl("/api/reservations"), {
+            credentials: "include",
+          }),
+          fetch(buildApiUrl("/api/locations"), {
+            credentials: "include",
+          }),
+        ]);
+
+        if (reservationsResponse.status === 401 || locationsResponse.status === 401) {
+          if (isMounted) {
+            setUpcomingReservations([]);
+          }
+          return;
+        }
+
+        if (!reservationsResponse.ok) {
+          throw new Error(
+            `Reservations request failed (${reservationsResponse.status})`,
+          );
+        }
+
+        if (!locationsResponse.ok) {
+          throw new Error(`Locations request failed (${locationsResponse.status})`);
+        }
+
+        const reservations = (await reservationsResponse.json()) as ReservationDto[];
+        const locations = (await locationsResponse.json()) as LocationDto[];
+        if (!isMounted) {
+          return;
+        }
+
+        const locationLookup = new Map(
+          locations.map((location) => [
+            location.id,
+            location.address?.trim() ||
+              location.name?.trim() ||
+              `Location ${location.id}`,
+          ]),
+        );
+        const now = new Date();
+
+        const upcoming = reservations
+          .map((reservation) => {
+            const parsedDateTime = parseReservationDateTime(
+              reservation.date,
+              reservation.time,
+            );
+            if (!parsedDateTime) {
+              return null;
+            }
+
+            return {
+              id: reservation.id,
+              sortKey: parsedDateTime.getTime(),
+              locationLabel:
+                locationLookup.get(reservation.locationId) ??
+                `Location ${reservation.locationId}`,
+              dateTimeLabel: formatReservationDateTime(parsedDateTime),
+            };
+          })
+          .filter(
+            (
+              reservation,
+            ): reservation is {
+              id: number;
+              sortKey: number;
+              locationLabel: string;
+              dateTimeLabel: string;
+            } => !!reservation && reservation.sortKey >= now.getTime(),
+          )
+          .sort((a, b) => a.sortKey - b.sortKey)
+          .slice(0, 10)
+          .map((reservation) => ({
+            id: reservation.id,
+            locationLabel: reservation.locationLabel,
+            dateTimeLabel: reservation.dateTimeLabel,
+          }));
+
+        setUpcomingReservations(upcoming);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setUpcomingReservations([]);
+      } finally {
+        if (isMounted) {
+          setIsLoadingUpcomingReservations(false);
+        }
+      }
+    };
+
+    void loadUpcomingReservations();
 
     return () => {
       isMounted = false;
@@ -240,6 +405,31 @@ export default function CustomerPage({
                 );
               })}
             </div>
+          </section>
+
+          <section className="customer-card">
+            <h2>UPCOMING RESERVATIONS</h2>
+            {isLoadingUpcomingReservations ? (
+              <p className="customer-helper-text">Loading upcoming reservations...</p>
+            ) : upcomingReservations.length === 0 ? (
+              <p className="customer-helper-text">No upcoming reservations.</p>
+            ) : (
+              <div className="customer-upcoming-reservations-list">
+                {upcomingReservations.map((reservation) => (
+                  <article
+                    key={reservation.id}
+                    className="customer-upcoming-reservation-row"
+                  >
+                    <p className="customer-upcoming-reservation-location">
+                      Location: {reservation.locationLabel}
+                    </p>
+                    <p className="customer-upcoming-reservation-time">
+                      Time: {reservation.dateTimeLabel}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       </section>
