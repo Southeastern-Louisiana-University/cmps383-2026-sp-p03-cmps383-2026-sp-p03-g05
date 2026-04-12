@@ -8,7 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/auth-context';
 import { useCart } from '@/context/cart-context';
 import { BrandColors } from '@/constants/theme';
-import { menuItemsApi, ordersApi, usersApi, type OrderHistoryDto, type OrderItemDto } from '@/lib/api';
+import { locationsApi, menuItemsApi, ordersApi, reservationsApi, usersApi, type OrderHistoryDto, type OrderItemDto } from '@/lib/api';
 
 const favoriteImageByName: Record<string, number> = {
   'Iced Latte': require('@/assets/images/iced late.png'),
@@ -21,20 +21,26 @@ const favoriteImageByName: Record<string, number> = {
 const emptyFavoriteSlots = [0, 1, 2];
 const levels = [1, 2, 3, 4, 5];
 
+type UpcomingReservation = {
+  id: number;
+  locationLabel: string;
+  dateTimeLabel: string;
+};
+
 function getCompletedLevels(pridePoints: number) {
-  if (pridePoints < 0) {
+  if (pridePoints <= 0) {
     return 0;
   }
-  if (pridePoints <= 100) {
+  if (pridePoints <= 1000) {
     return 1;
   }
-  if (pridePoints <= 200) {
+  if (pridePoints <= 2000) {
     return 2;
   }
-  if (pridePoints <= 300) {
+  if (pridePoints <= 3000) {
     return 3;
   }
-  if (pridePoints <= 400) {
+  if (pridePoints <= 4000) {
     return 4;
   }
   return 5;
@@ -94,6 +100,40 @@ function formatOrderDate(dateText: string) {
   });
 }
 
+function parseReservationDateTime(dateText: string, timeText: string) {
+  const datePart = dateText.split('T')[0]?.trim();
+  const timePart = timeText.trim();
+  if (!datePart || !timePart) {
+    return null;
+  }
+
+  const timeTokens = timePart.split(':');
+  if (timeTokens.length < 2) {
+    return null;
+  }
+
+  const hour = String(timeTokens[0] ?? '').padStart(2, '0');
+  const minute = String(timeTokens[1] ?? '').padStart(2, '0');
+  const second = String((timeTokens[2] ?? '00')).padStart(2, '0').slice(0, 2);
+
+  const parsed = new Date(`${datePart}T${hour}:${minute}:${second}`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function formatReservationDateTime(dateValue: Date) {
+  return dateValue.toLocaleString('en-US', {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const { isInCart, toggleCartItem } = useCart();
@@ -103,6 +143,8 @@ export default function HomeScreen() {
   const [recentOrders, setRecentOrders] = useState<OrderHistoryDto[]>([]);
   const [isLoadingOrderHistory, setIsLoadingOrderHistory] = useState(false);
   const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>(fallbackFeaturedItems);
+  const [upcomingReservations, setUpcomingReservations] = useState<UpcomingReservation[]>([]);
+  const [isLoadingUpcomingReservations, setIsLoadingUpcomingReservations] = useState(false);
 
   useEffect(() => {
     setPridePoints(user?.pridePoints ?? 0);
@@ -161,6 +203,68 @@ export default function HomeScreen() {
     };
 
     void loadOrderHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUpcomingReservations = async () => {
+      setIsLoadingUpcomingReservations(true);
+      try {
+        const [reservations, locations] = await Promise.all([reservationsApi.list(), locationsApi.list()]);
+        if (!isMounted) {
+          return;
+        }
+
+        const locationLookup = new Map(
+          locations.map((location) => [location.id, location.address?.trim() || location.name?.trim() || `Location ${location.id}`])
+        );
+        const now = new Date();
+
+        const upcoming = reservations
+          .map((reservation) => {
+            const parsedDateTime = parseReservationDateTime(reservation.date, reservation.time);
+            if (!parsedDateTime) {
+              return null;
+            }
+
+            return {
+              id: reservation.id,
+              sortKey: parsedDateTime.getTime(),
+              locationLabel: locationLookup.get(reservation.locationId) ?? `Location ${reservation.locationId}`,
+              dateTimeLabel: formatReservationDateTime(parsedDateTime),
+            };
+          })
+          .filter((reservation): reservation is { id: number; sortKey: number; locationLabel: string; dateTimeLabel: string } => {
+            return !!reservation && reservation.sortKey >= now.getTime();
+          })
+          .sort((a, b) => a.sortKey - b.sortKey)
+          .slice(0, 10)
+          .map((reservation) => ({
+            id: reservation.id,
+            locationLabel: reservation.locationLabel,
+            dateTimeLabel: reservation.dateTimeLabel,
+          }));
+
+        setUpcomingReservations(upcoming);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setUpcomingReservations([]);
+      } finally {
+        if (isMounted) {
+          setIsLoadingUpcomingReservations(false);
+        }
+      }
+    };
+
+    void loadUpcomingReservations();
 
     return () => {
       isMounted = false;
@@ -321,6 +425,27 @@ export default function HomeScreen() {
               );
             })}
           </View>
+        </View>
+
+        <View style={styles.card}>
+          <ThemedText type="defaultSemiBold" style={styles.cardTitle}>
+            UPCOMING RESERVATIONS
+          </ThemedText>
+
+          {isLoadingUpcomingReservations ? (
+            <ThemedText style={styles.helperText}>Loading upcoming reservations...</ThemedText>
+          ) : upcomingReservations.length === 0 ? (
+            <ThemedText style={styles.helperText}>No upcoming reservations.</ThemedText>
+          ) : (
+            <View style={styles.upcomingReservationsList}>
+              {upcomingReservations.map((reservation) => (
+                <View key={reservation.id} style={styles.upcomingReservationRow}>
+                  <ThemedText style={styles.upcomingReservationLocation}>Location: {reservation.locationLabel}</ThemedText>
+                  <ThemedText style={styles.upcomingReservationTime}>Time: {reservation.dateTimeLabel}</ThemedText>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
     </ThemedView>
@@ -505,5 +630,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
     marginTop: -2,
+  },
+  upcomingReservationsList: {
+    gap: 8,
+  },
+  upcomingReservationRow: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#fffdf9',
+    gap: 2,
+  },
+  upcomingReservationLocation: {
+    color: BrandColors.darkAccent,
+    fontWeight: '700',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  upcomingReservationTime: {
+    color: BrandColors.text,
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

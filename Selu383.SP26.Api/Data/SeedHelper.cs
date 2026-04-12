@@ -4,6 +4,7 @@ using Selu383.SP26.Api.Features.Auth;
 using Selu383.SP26.Api.Features.Items;
 using Selu383.SP26.Api.Features.Locations;
 using Selu383.SP26.Api.Features.Orders;
+using Selu383.SP26.Api.Features.Tables;
 
 namespace Selu383.SP26.Api.Data;
 
@@ -18,6 +19,7 @@ public static class SeedHelper
         await AddRoles(serviceProvider);
         await AddUsers(serviceProvider);
         await AddLocations(dataContext);
+        await AddTables(dataContext);
         await AddOrderStatuses(dataContext);
         await AddMenuItems(dataContext);
         try
@@ -60,6 +62,7 @@ public static class SeedHelper
                 UserName = "bob",
                 FirstName = "Bob",
                 LastName = "Builder",
+                PhoneNumber = "985-867-5309",
                 RewardsTotal = 195
             };
             await userManager.CreateAsync(bob, defaultPassword);
@@ -68,9 +71,29 @@ public static class SeedHelper
         {
             await userManager.AddToRoleAsync(bob, RoleNames.User);
         }
+        var shouldUpdateBob = false;
         if (bob.RewardsTotal != 195)
         {
             bob.RewardsTotal = 195;
+            shouldUpdateBob = true;
+        }
+        if (bob.FirstName != "Bob")
+        {
+            bob.FirstName = "Bob";
+            shouldUpdateBob = true;
+        }
+        if (bob.LastName != "Builder")
+        {
+            bob.LastName = "Builder";
+            shouldUpdateBob = true;
+        }
+        if (bob.PhoneNumber != "985-867-5309")
+        {
+            bob.PhoneNumber = "985-867-5309";
+            shouldUpdateBob = true;
+        }
+        if (shouldUpdateBob)
+        {
             await userManager.UpdateAsync(bob);
         }
 
@@ -157,6 +180,49 @@ public static class SeedHelper
 
         dataContext.Set<OrderStatus>().AddRange(missingStatuses);
         await dataContext.SaveChangesAsync();
+    }
+
+    private static async Task AddTables(DataContext dataContext)
+    {
+        var locations = await dataContext.Set<Location>()
+            .AsNoTracking()
+            .ToListAsync();
+
+        if (locations.Count == 0)
+        {
+            return;
+        }
+
+        var existingTables = await dataContext.Set<Table>()
+            .AsNoTracking()
+            .ToListAsync();
+
+        foreach (var location in locations)
+        {
+            var existingNumbers = existingTables
+                .Where(x => x.LocationId == location.Id)
+                .Select(x => x.Number)
+                .ToHashSet();
+
+            for (int tableNumber = 1; tableNumber <= location.TableCount; tableNumber++)
+            {
+                if (existingNumbers.Contains(tableNumber))
+                {
+                    continue;
+                }
+
+                dataContext.Set<Table>().Add(new Table
+                {
+                    LocationId = location.Id,
+                    Number = tableNumber,
+                });
+            }
+        }
+
+        if (dataContext.ChangeTracker.HasChanges())
+        {
+            await dataContext.SaveChangesAsync();
+        }
     }
 
     private static async Task AddMenuItems(DataContext dataContext)

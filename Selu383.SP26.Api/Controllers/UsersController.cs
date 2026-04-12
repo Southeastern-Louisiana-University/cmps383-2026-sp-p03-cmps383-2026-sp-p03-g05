@@ -1,8 +1,10 @@
 using System.Transactions;
+using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Selu383.SP26.Api.Extensions;
 using Selu383.SP26.Api.Features.Auth;
 
 namespace Selu383.SP26.Api.Controllers;
@@ -66,11 +68,55 @@ public class UsersController : ControllerBase
         return Ok(user);
     }
 
+    [HttpGet("lookup")]
+    public async Task<ActionResult<FastOrderUserLookupDto>> LookupByProfile(
+        [FromQuery] string firstName,
+        [FromQuery] string lastName,
+        [FromQuery] string phoneNumber)
+    {
+        var normalizedFirstName = firstName?.Trim() ?? string.Empty;
+        var normalizedLastName = lastName?.Trim() ?? string.Empty;
+        var normalizedPhone = NormalizePhoneNumber(phoneNumber);
+
+        if (normalizedFirstName.Length == 0 || normalizedLastName.Length == 0 || normalizedPhone.Length == 0)
+        {
+            return BadRequest("firstName, lastName, and phoneNumber are required.");
+        }
+
+        var candidates = await userManager.Users
+            .AsNoTracking()
+            .Where(x => x.FirstName == normalizedFirstName && x.LastName == normalizedLastName)
+            .Select(x => new
+            {
+                x.Id,
+                x.UserName,
+                x.PhoneNumber
+            })
+            .ToListAsync();
+
+        var match = candidates.FirstOrDefault(x => NormalizePhoneNumber(x.PhoneNumber) == normalizedPhone);
+        if (match == null)
+        {
+            return NotFound();
+        }
+
+        return Ok(new FastOrderUserLookupDto
+        {
+            Id = match.Id,
+            UserName = match.UserName ?? string.Empty
+        });
+    }
+
     [HttpPost]
-    [Authorize(Roles = RoleNames.Admin)]
     public async Task<ActionResult<UserDto>> Create(CreateUserDto dto)
     {
+        if (!dto.HasAgreedToPolicies)
+        {
+            return BadRequest("Terms of Service and Privacy Policy must be accepted.");
+        }
+
         using var transaction = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
+        var assignedRoles = User.IsInRole(RoleNames.Admin) ? dto.Roles : [RoleNames.User];
 
         var newUser = new User
         {
@@ -81,6 +127,8 @@ public class UsersController : ControllerBase
             City = dto.City,
             State = dto.State,
             ZipCode = dto.ZipCode,
+            Email = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim(),
+            PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber) ? null : dto.PhoneNumber.Trim(),
             RewardsTotal = dto.PridePoints
         };
 
@@ -92,7 +140,7 @@ public class UsersController : ControllerBase
 
         try
         {
-            var roleResult = await userManager.AddToRolesAsync(newUser, dto.Roles);
+            var roleResult = await userManager.AddToRolesAsync(newUser, assignedRoles);
             if (!roleResult.Succeeded)
             {
                 return BadRequest();
@@ -116,7 +164,7 @@ public class UsersController : ControllerBase
             City = newUser.City,
             State = newUser.State,
             ZipCode = newUser.ZipCode,
-            Roles = dto.Roles
+            Roles = assignedRoles
         });
     }
 
@@ -164,5 +212,67 @@ public class UsersController : ControllerBase
             ZipCode = user.ZipCode,
             Roles = (await userManager.GetRolesAsync(user)).ToArray()
         });
+    }
+
+    [HttpPost("{id}/rewards")]
+    [Authorize]
+    public async Task<ActionResult<AwardRewardsResultDto>> AwardRewards(int id, AwardRewardsDto dto)
+    {
+        if (dto.PointsToAdd < 1)
+        {
+            return BadRequest("PointsToAdd must be greater than zero.");
+        }
+
+        var user = await userManager.FindByIdAsync(id.ToString());
+        if (user == null)
+        {
+            return NotFound();
+        }
+
+        var currentUserId = User.GetCurrentUserId();
+        if (currentUserId == null)
+        {
+            return Unauthorized();
+        }
+
+        if (currentUserId != id && !User.IsInRole(RoleNames.Admin))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            checked
+            {
+                user.RewardsTotal += dto.PointsToAdd;
+            }
+        }
+        catch (OverflowException)
+        {
+            return BadRequest("Rewards total overflow.");
+        }
+
+        var updateResult = await userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            return BadRequest();
+        }
+
+        return Ok(new AwardRewardsResultDto
+        {
+            UserId = user.Id,
+            PointsAwarded = dto.PointsToAdd,
+            PridePoints = user.RewardsTotal
+        });
+    }
+
+    private static string NormalizePhoneNumber(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return new string(value.Where(char.IsDigit).ToArray());
     }
 }

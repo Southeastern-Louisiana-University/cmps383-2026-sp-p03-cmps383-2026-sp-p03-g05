@@ -7,12 +7,12 @@ import {
   CircleUserRound,
   LoaderCircle,
   LogOut,
+  Menu,
   Minus,
   Plus,
   Square,
   SquareCheck,
   ShoppingCart,
-  ThumbsUp,
   X,
 } from "lucide-react";
 import "./index.css";
@@ -48,6 +48,7 @@ import visapayImg from "./assets/visapay.png";
 import applepayImg from "./assets/applepay.png";
 import gpayImg from "./assets/gpay.png";
 import CustomerPage from "./customerpage";
+import ReservationsModal, { type ReservationLoginPayload } from "./reservations";
 
 const menuItemImages: Record<string, string> = {
   "Iced Latte": icedLateImg,
@@ -329,6 +330,26 @@ type AuthenticationUserDto = {
   roles: string[];
 };
 
+type CreateUserDto = {
+  userName: string;
+  password: string;
+  roles: string[];
+  firstName: string;
+  lastName: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  pridePoints: number;
+  hasAgreedToPolicies: boolean;
+};
+
+type AwardRewardsResultDto = {
+  userId: number;
+  pointsAwarded: number;
+  pridePoints: number;
+};
+
 type LocationDto = {
   id: number;
   name: string;
@@ -344,6 +365,8 @@ type CartSummaryItem = {
   unitPrice: number;
   quantity: number;
 };
+
+type PolicyType = "terms" | "privacy" | null;
 
 const defaultApiBaseUrl = "";
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
@@ -363,10 +386,30 @@ const paymentMethodOptions = [
 const parsePrice = (value: string) =>
   Number.parseFloat(value.replace(/[^0-9.]/g, "")) || 0;
 
+const formatPhoneNumber = (value: string) => {
+  const digitsOnly = value.replace(/\D/g, "").slice(0, 10);
+
+  if (digitsOnly.length <= 3) {
+    return digitsOnly;
+  }
+
+  if (digitsOnly.length <= 6) {
+    return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3)}`;
+  }
+
+  return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6)}`;
+};
+
+const calculateRewardPoints = (orderTotal: number) =>
+  Math.max(0, Math.round(orderTotal * 10));
+const rewardsCounterDurationMs = 1200;
+const rewardsPopupHoldMs = 3000;
+
 const buildApiUrl = (path: string) =>
   `${apiBaseUrl.replace(/\/$/, "")}${path}`;
 
 const customerPagePath = "/customerpage";
+const legacyReservationsPath = "/reservations";
 
 const normalizePath = (path: string) => {
   const normalized = path.trim().toLowerCase();
@@ -421,6 +464,8 @@ function App() {
   );
   const [isAuthPopupOpen, setIsAuthPopupOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isReservationsModalOpen, setIsReservationsModalOpen] = useState(false);
   const [loginUserName, setLoginUserName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loggedInUserName, setLoggedInUserName] = useState<string | null>(null);
@@ -432,6 +477,20 @@ function App() {
   );
   const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
   const [loginErrorMessage, setLoginErrorMessage] = useState<string | null>(null);
+  const [isSignUpModalOpen, setIsSignUpModalOpen] = useState(false);
+  const [signUpName, setSignUpName] = useState("");
+  const [signUpPhoneNumber, setSignUpPhoneNumber] = useState("");
+  const [signUpEmailAddress, setSignUpEmailAddress] = useState("");
+  const [signUpUserName, setSignUpUserName] = useState("");
+  const [signUpPassword, setSignUpPassword] = useState("");
+  const [signUpStreetAddress, setSignUpStreetAddress] = useState("");
+  const [signUpCity, setSignUpCity] = useState("");
+  const [signUpStateCode, setSignUpStateCode] = useState("");
+  const [signUpZipCode, setSignUpZipCode] = useState("");
+  const [signUpHasAgreed, setSignUpHasAgreed] = useState(false);
+  const [signUpErrorMessage, setSignUpErrorMessage] = useState<string | null>(null);
+  const [activePolicyModal, setActivePolicyModal] = useState<PolicyType>(null);
+  const [isSubmittingSignUp, setIsSubmittingSignUp] = useState(false);
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [locations, setLocations] = useState<LocationDto[]>([]);
@@ -447,6 +506,8 @@ function App() {
   const [orderErrorMessage, setOrderErrorMessage] = useState<string | null>(null);
   const [orderSuccessMessageVisible, setOrderSuccessMessageVisible] =
     useState(false);
+  const [rewardPointsEarned, setRewardPointsEarned] = useState(0);
+  const [rewardCounter, setRewardCounter] = useState(0);
   const [featuredMenuItems, setFeaturedMenuItems] = useState<MenuItem[]>(
     featuredDrinks,
   );
@@ -461,7 +522,9 @@ function App() {
   const swipeStartX = useRef<number | null>(null);
   const swipeDeltaX = useRef(0);
   const closeCheckoutTimer = useRef<number | null>(null);
+  const rewardsCounterTimer = useRef<number | null>(null);
   const authControlRef = useRef<HTMLDivElement | null>(null);
+  const navAreaRef = useRef<HTMLDivElement | null>(null);
   const isCustomerPage = currentPath === customerPagePath;
   const displayMenuItems = [
     ...drinkMenuItems,
@@ -560,6 +623,55 @@ function App() {
     setIsAuthPopupOpen((previous) => !previous);
   };
 
+  const resetSignUpForm = () => {
+    setSignUpName("");
+    setSignUpPhoneNumber("");
+    setSignUpEmailAddress("");
+    setSignUpUserName("");
+    setSignUpPassword("");
+    setSignUpStreetAddress("");
+    setSignUpCity("");
+    setSignUpStateCode("");
+    setSignUpZipCode("");
+    setSignUpHasAgreed(false);
+    setSignUpErrorMessage(null);
+    setActivePolicyModal(null);
+  };
+
+  const openSignUpModal = () => {
+    setIsAuthPopupOpen(false);
+    setIsUserMenuOpen(false);
+    setLoginErrorMessage(null);
+    setSignUpErrorMessage(null);
+    setActivePolicyModal(null);
+    setIsSignUpModalOpen(true);
+  };
+
+  const closeSignUpModal = () => {
+    if (isSubmittingSignUp) {
+      return;
+    }
+
+    setIsSignUpModalOpen(false);
+    setActivePolicyModal(null);
+  };
+
+  const closePolicyModal = () => {
+    if (isSubmittingSignUp) {
+      return;
+    }
+
+    setActivePolicyModal(null);
+  };
+
+  const handleSignUpPhoneChange = (value: string) => {
+    setSignUpPhoneNumber(formatPhoneNumber(value));
+  };
+
+  const handleSignUpStateChange = (value: string) => {
+    setSignUpStateCode(value.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2));
+  };
+
   const navigateToPath = (path: string) => {
     const normalizedPath = normalizePath(path);
     const currentLocationPath = normalizePath(window.location.pathname);
@@ -568,10 +680,12 @@ function App() {
     }
 
     setCurrentPath(normalizedPath);
+    setIsMobileNavOpen(false);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
 
   const handleUserIconClick = () => {
+    setIsMobileNavOpen(false);
     if (loggedInUserName) {
       setIsAuthPopupOpen(false);
       setIsUserMenuOpen((previous) => !previous);
@@ -583,7 +697,21 @@ function App() {
 
   const handleAccountClick = () => {
     setIsUserMenuOpen(false);
+    setIsReservationsModalOpen(false);
     navigateToPath(customerPagePath);
+  };
+
+  const toggleMobileNav = () => {
+    setIsAuthPopupOpen(false);
+    setIsUserMenuOpen(false);
+    setIsMobileNavOpen((previous) => !previous);
+  };
+
+  const openReservationsModal = () => {
+    setIsAuthPopupOpen(false);
+    setIsUserMenuOpen(false);
+    setIsMobileNavOpen(false);
+    setIsReservationsModalOpen(true);
   };
 
   const handleLogOut = async () => {
@@ -603,6 +731,7 @@ function App() {
       setCurrentUserId(null);
       setPridePoints(0);
       setLoginPassword("");
+      setIsReservationsModalOpen(false);
       setIsSessionResolved(true);
       navigateToPath("/");
     }
@@ -714,6 +843,15 @@ function App() {
   }, [isCustomerPage, isSessionResolved, loggedInUserName]);
 
   useEffect(() => {
+    if (currentPath !== legacyReservationsPath) {
+      return;
+    }
+
+    setIsReservationsModalOpen(true);
+    navigateToPath("/");
+  }, [currentPath]);
+
+  useEffect(() => {
     if (!isAuthPopupOpen && !isUserMenuOpen) {
       return;
     }
@@ -737,6 +875,43 @@ function App() {
       document.removeEventListener("pointerdown", handleOutsidePointerDown);
     };
   }, [isAuthPopupOpen, isUserMenuOpen]);
+
+  useEffect(() => {
+    if (!isMobileNavOpen) {
+      return;
+    }
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (navAreaRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsMobileNavOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handleOutsidePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointerDown);
+    };
+  }, [isMobileNavOpen]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 900) {
+        setIsMobileNavOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -897,10 +1072,16 @@ function App() {
       window.clearTimeout(closeCheckoutTimer.current);
       closeCheckoutTimer.current = null;
     }
+    if (rewardsCounterTimer.current !== null) {
+      window.clearInterval(rewardsCounterTimer.current);
+      rewardsCounterTimer.current = null;
+    }
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(false);
     setOrderErrorMessage(null);
     setOrderSuccessMessageVisible(false);
+    setRewardPointsEarned(0);
+    setRewardCounter(0);
   };
 
   const handleKeepShopping = () => {
@@ -945,9 +1126,75 @@ function App() {
   const openCheckoutModal = () => {
     setOrderErrorMessage(null);
     setOrderSuccessMessageVisible(false);
+    setRewardPointsEarned(0);
+    setRewardCounter(0);
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(true);
     void fetchLocations();
+  };
+
+  const startRewardsCounterAnimation = (pointsToAdd: number) => {
+    setRewardPointsEarned(pointsToAdd);
+    setRewardCounter(0);
+
+    if (rewardsCounterTimer.current !== null) {
+      window.clearInterval(rewardsCounterTimer.current);
+      rewardsCounterTimer.current = null;
+    }
+
+    if (pointsToAdd <= 0) {
+      return;
+    }
+
+    const startedAt = Date.now();
+
+    rewardsCounterTimer.current = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const progress = Math.min(1, elapsed / rewardsCounterDurationMs);
+      const nextValue = Math.floor(pointsToAdd * progress);
+      setRewardCounter(nextValue);
+
+      if (progress >= 1) {
+        setRewardCounter(pointsToAdd);
+        if (rewardsCounterTimer.current !== null) {
+          window.clearInterval(rewardsCounterTimer.current);
+          rewardsCounterTimer.current = null;
+        }
+      }
+    }, 30);
+  };
+
+  const applyRewardsFromOrder = async (pointsToAdd: number) => {
+    if (pointsToAdd <= 0 || currentUserId === null) {
+      return;
+    }
+
+    try {
+      // Fetch current points first, then update with increment API.
+      await fetch(buildApiUrl(`/api/users/${currentUserId}`), {
+        credentials: "include",
+      });
+
+      const response = await fetch(buildApiUrl(`/api/users/${currentUserId}/rewards`), {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pointsToAdd,
+        }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const rewardsUpdate = (await response.json()) as AwardRewardsResultDto;
+      setPridePoints(rewardsUpdate.pridePoints);
+    } catch {
+      // Do not fail order flow when rewards update fails.
+    }
   };
 
   const handleSubmitOrder = async () => {
@@ -1004,6 +1251,9 @@ function App() {
         throw new Error(message);
       }
 
+      const pointsToAdd = calculateRewardPoints(cartSubtotal);
+      await applyRewardsFromOrder(pointsToAdd);
+      startRewardsCounterAnimation(pointsToAdd);
       setOrderSuccessMessageVisible(true);
       if (closeCheckoutTimer.current !== null) {
         window.clearTimeout(closeCheckoutTimer.current);
@@ -1012,7 +1262,7 @@ function App() {
         clearCart();
         closeCartAndCheckout();
         closeCheckoutTimer.current = null;
-      }, 2000);
+      }, rewardsCounterDurationMs + rewardsPopupHoldMs);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Order failed";
       setOrderErrorMessage(message);
@@ -1026,9 +1276,54 @@ function App() {
       if (closeCheckoutTimer.current !== null) {
         window.clearTimeout(closeCheckoutTimer.current);
       }
+      if (rewardsCounterTimer.current !== null) {
+        window.clearInterval(rewardsCounterTimer.current);
+      }
     },
     [],
   );
+
+  const authenticateUser = async (userName: string, password: string) => {
+    const response = await fetch(buildApiUrl("/api/authentication/login"), {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userName: userName.trim(),
+        password,
+      }),
+    });
+
+    if (!response.ok) {
+      let message = `Login failed (${response.status})`;
+      try {
+        const responseText = await response.text();
+        if (responseText) {
+          message = responseText;
+        }
+      } catch {
+        // Keep fallback message when response parsing fails.
+      }
+
+      throw new Error(message);
+    }
+
+    const user = (await response.json()) as AuthenticationUserDto;
+    setLoggedInUserName(user.userName);
+    setCurrentUserId(user.id);
+    setPridePoints(user.pridePoints ?? 0);
+    setIsSessionResolved(true);
+    setLoginPassword("");
+    setIsAuthPopupOpen(false);
+    setIsUserMenuOpen(false);
+    return user;
+  };
+
+  const handleReservationSignIn = async (credentials: ReservationLoginPayload) => {
+    await authenticateUser(credentials.userName, credentials.password);
+  };
 
   const handleLoginSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1040,20 +1335,90 @@ function App() {
     setLoginErrorMessage(null);
 
     try {
-      const response = await fetch(buildApiUrl("/api/authentication/login"), {
+      await authenticateUser(loginUserName, loginPassword);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Login failed";
+      setLoginErrorMessage(message);
+    } finally {
+      setIsSubmittingLogin(false);
+    }
+  };
+
+  const handleSignUpSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isSubmittingSignUp) {
+      return;
+    }
+
+    const trimmedName = signUpName.trim();
+    const trimmedPhone = signUpPhoneNumber.trim();
+    const trimmedEmail = signUpEmailAddress.trim();
+    const trimmedUserName = signUpUserName.trim();
+    const trimmedPassword = signUpPassword;
+    const trimmedAddress = signUpStreetAddress.trim();
+    const phoneDigits = trimmedPhone.replace(/\D/g, "");
+
+    if (
+      !trimmedName ||
+      !trimmedPhone ||
+      !trimmedEmail ||
+      !trimmedUserName ||
+      !trimmedPassword ||
+      !trimmedAddress
+    ) {
+      setSignUpErrorMessage(
+        "Name, phone number, email, user name, password, and address are required.",
+      );
+      return;
+    }
+
+    if (!trimmedEmail.includes("@")) {
+      setSignUpErrorMessage("Enter a valid email address.");
+      return;
+    }
+
+    if (phoneDigits.length !== 10) {
+      setSignUpErrorMessage("Enter a valid 10-digit phone number.");
+      return;
+    }
+
+    if (!signUpHasAgreed) {
+      setSignUpErrorMessage("You must agree to the terms and privacy policy.");
+      return;
+    }
+
+    setIsSubmittingSignUp(true);
+    setSignUpErrorMessage(null);
+    setActivePolicyModal(null);
+
+    try {
+      const [firstName, ...lastNameParts] = trimmedName.split(/\s+/);
+      const lastName = lastNameParts.join(" ").trim() || "Customer";
+      const payload: CreateUserDto = {
+        userName: trimmedUserName,
+        password: trimmedPassword,
+        roles: ["User"],
+        firstName,
+        lastName,
+        address: trimmedAddress,
+        city: signUpCity.trim(),
+        state: signUpStateCode.trim(),
+        zipCode: signUpZipCode.trim(),
+        pridePoints: 0,
+        hasAgreedToPolicies: signUpHasAgreed,
+      };
+
+      const response = await fetch(buildApiUrl("/api/users"), {
         method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          userName: loginUserName.trim(),
-          password: loginPassword,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        let message = `Login failed (${response.status})`;
+        let message = `Sign up failed (${response.status})`;
         try {
           const responseText = await response.text();
           if (responseText) {
@@ -1062,25 +1427,25 @@ function App() {
         } catch {
           // Keep fallback message when response parsing fails.
         }
-
         throw new Error(message);
       }
 
-      const user = (await response.json()) as AuthenticationUserDto;
-      setLoggedInUserName(user.userName);
-      setCurrentUserId(user.id);
-      setPridePoints(user.pridePoints ?? 0);
-      setIsSessionResolved(true);
-      setLoginPassword("");
-      setIsAuthPopupOpen(false);
-      setIsUserMenuOpen(false);
+      await authenticateUser(trimmedUserName, trimmedPassword);
+      resetSignUpForm();
+      setIsSignUpModalOpen(false);
+      navigateToPath(customerPagePath);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Login failed";
-      setLoginErrorMessage(message);
+      const message = error instanceof Error ? error.message : "Sign up failed";
+      setSignUpErrorMessage(message);
     } finally {
-      setIsSubmittingLogin(false);
+      setIsSubmittingSignUp(false);
     }
   };
+
+  const rewardWheelProgress =
+    rewardPointsEarned > 0
+      ? Math.min(100, Math.round((rewardCounter / rewardPointsEarned) * 100))
+      : 100;
 
   return (
     <div className="page">
@@ -1090,7 +1455,7 @@ function App() {
           <span>Caffeinated Lions</span>
         </div>
 
-        <div className="nav-area">
+        <div className="nav-area" ref={navAreaRef}>
           <div className="nav-menu">
             {isCustomerPage ? (
               <nav className="nav-links">
@@ -1108,8 +1473,63 @@ function App() {
                 <a href="#drinks">Drinks</a>
                 <a href="#food">Food</a>
                 <a href="#about">About</a>
+                <button
+                  type="button"
+                  className="nav-link-btn"
+                  onClick={openReservationsModal}
+                >
+                  Reservations
+                </button>
               </nav>
             )}
+
+            <button
+              type="button"
+              className="mobile-nav-toggle"
+              aria-label={isMobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+              aria-expanded={isMobileNavOpen}
+              onClick={toggleMobileNav}
+            >
+              {isMobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+
+            {isMobileNavOpen ? (
+              <div className="mobile-nav-dropdown">
+                <nav className="mobile-nav-links">
+                  {isCustomerPage ? (
+                    <button
+                      type="button"
+                      className="mobile-nav-link-btn"
+                      onClick={() => navigateToPath("/")}
+                    >
+                      Home
+                    </button>
+                  ) : (
+                    <>
+                      <a href="#featured" onClick={() => setIsMobileNavOpen(false)}>
+                        Featured
+                      </a>
+                      <a href="#drinks" onClick={() => setIsMobileNavOpen(false)}>
+                        Drinks
+                      </a>
+                      <a href="#food" onClick={() => setIsMobileNavOpen(false)}>
+                        Food
+                      </a>
+                      <a href="#about" onClick={() => setIsMobileNavOpen(false)}>
+                        About
+                      </a>
+                      <button
+                        type="button"
+                        className="mobile-nav-link-btn"
+                        onClick={openReservationsModal}
+                      >
+                        Reservations
+                      </button>
+                    </>
+                  )}
+                </nav>
+              </div>
+            ) : null}
           </div>
 
           <div className="nav-actions">
@@ -1181,13 +1601,23 @@ function App() {
                       required
                     />
                   </label>
-                  <button
-                    type="submit"
-                    className="auth-submit-btn"
-                    disabled={isSubmittingLogin}
-                  >
-                    {isSubmittingLogin ? "Signing In..." : "Login"}
-                  </button>
+                  <div className="auth-actions-row">
+                    <button
+                      type="submit"
+                      className="auth-submit-btn"
+                      disabled={isSubmittingLogin}
+                    >
+                      {isSubmittingLogin ? "Signing In..." : "Login"}
+                    </button>
+                    <button
+                      type="button"
+                      className="auth-secondary-btn"
+                      onClick={openSignUpModal}
+                      disabled={isSubmittingLogin}
+                    >
+                      Sign Up
+                    </button>
+                  </div>
                   {loginErrorMessage ? (
                     <p className="auth-error">{loginErrorMessage}</p>
                   ) : null}
@@ -1222,7 +1652,11 @@ function App() {
         />
       ) : null}
 
-      <main style={{ display: isCustomerPage ? "none" : undefined }}>
+      <main
+        style={{
+          display: isCustomerPage ? "none" : undefined,
+        }}
+      >
         <section className="hero">
           <div className="hero-text">
             <p className="hero-kicker">Bold Coffee. Lion Energy.</p>
@@ -1430,6 +1864,234 @@ function App() {
         </section>
       </main>
 
+      {isSignUpModalOpen ? (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sign up"
+          onClick={closeSignUpModal}
+        >
+          <div className="signup-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="cart-modal-header">
+              <h2>Sign Up</h2>
+              <button
+                type="button"
+                className="cart-modal-close"
+                aria-label="Close sign up"
+                onClick={closeSignUpModal}
+                disabled={isSubmittingSignUp}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="signup-modal-subtitle">
+              Sign up to receive discounts, order your favorites faster and much more.
+            </p>
+
+            <form
+              className="signup-form"
+              onSubmit={(event) => {
+                void handleSignUpSubmit(event);
+              }}
+            >
+              <div className="signup-grid-two">
+                <label className="signup-field">
+                  <span>Name</span>
+                  <input
+                    type="text"
+                    value={signUpName}
+                    onChange={(event) => setSignUpName(event.target.value)}
+                    autoComplete="name"
+                    required
+                    disabled={isSubmittingSignUp}
+                  />
+                </label>
+                <label className="signup-field">
+                  <span>Phone Number</span>
+                  <input
+                    type="tel"
+                    value={signUpPhoneNumber}
+                    onChange={(event) => handleSignUpPhoneChange(event.target.value)}
+                    autoComplete="tel"
+                    maxLength={12}
+                    required
+                    disabled={isSubmittingSignUp}
+                  />
+                </label>
+              </div>
+
+              <label className="signup-field">
+                <span>Email Address</span>
+                <input
+                  type="email"
+                  value={signUpEmailAddress}
+                  onChange={(event) => setSignUpEmailAddress(event.target.value)}
+                  autoComplete="email"
+                  required
+                  disabled={isSubmittingSignUp}
+                />
+              </label>
+
+              <div className="signup-grid-two">
+                <label className="signup-field">
+                  <span>User Name</span>
+                  <input
+                    type="text"
+                    value={signUpUserName}
+                    onChange={(event) => setSignUpUserName(event.target.value)}
+                    autoComplete="username"
+                    required
+                    disabled={isSubmittingSignUp}
+                  />
+                </label>
+                <label className="signup-field">
+                  <span>Password</span>
+                  <input
+                    type="password"
+                    value={signUpPassword}
+                    onChange={(event) => setSignUpPassword(event.target.value)}
+                    autoComplete="new-password"
+                    required
+                    disabled={isSubmittingSignUp}
+                  />
+                </label>
+              </div>
+
+              <label className="signup-field">
+                <span>Street Address</span>
+                <input
+                  type="text"
+                  value={signUpStreetAddress}
+                  onChange={(event) => setSignUpStreetAddress(event.target.value)}
+                  autoComplete="street-address"
+                  required
+                  disabled={isSubmittingSignUp}
+                />
+              </label>
+
+              <div className="signup-grid-three">
+                <label className="signup-field">
+                  <span>City</span>
+                  <input
+                    type="text"
+                    value={signUpCity}
+                    onChange={(event) => setSignUpCity(event.target.value)}
+                    autoComplete="address-level2"
+                    disabled={isSubmittingSignUp}
+                  />
+                </label>
+                <label className="signup-field">
+                  <span>State</span>
+                  <input
+                    type="text"
+                    value={signUpStateCode}
+                    onChange={(event) => handleSignUpStateChange(event.target.value)}
+                    autoComplete="address-level1"
+                    maxLength={2}
+                    disabled={isSubmittingSignUp}
+                  />
+                </label>
+                <label className="signup-field">
+                  <span>Zip</span>
+                  <input
+                    type="text"
+                    value={signUpZipCode}
+                    onChange={(event) =>
+                      setSignUpZipCode(
+                        event.target.value.replace(/[^0-9]/g, "").slice(0, 5),
+                      )
+                    }
+                    autoComplete="postal-code"
+                    maxLength={5}
+                    disabled={isSubmittingSignUp}
+                  />
+                </label>
+              </div>
+
+              <label className="signup-agreement-row">
+                <input
+                  type="checkbox"
+                  className="signup-checkbox"
+                  checked={signUpHasAgreed}
+                  onChange={(event) => setSignUpHasAgreed(event.target.checked)}
+                  disabled={isSubmittingSignUp}
+                />
+                <span>
+                  By signing up, you agree to Caffeinated Lions LLC{" "}
+                  <button
+                    type="button"
+                    className="policy-link-btn"
+                    onClick={() => setActivePolicyModal("terms")}
+                    disabled={isSubmittingSignUp}
+                  >
+                    Terms Of Service
+                  </button>{" "}
+                  and{" "}
+                  <button
+                    type="button"
+                    className="policy-link-btn"
+                    onClick={() => setActivePolicyModal("privacy")}
+                    disabled={isSubmittingSignUp}
+                  >
+                    Privacy Policy
+                  </button>
+                  .
+                </span>
+              </label>
+
+              {signUpErrorMessage ? (
+                <p className="signup-error">{signUpErrorMessage}</p>
+              ) : null}
+
+              <button
+                type="submit"
+                className="primary-btn signup-submit-btn"
+                disabled={isSubmittingSignUp}
+              >
+                {isSubmittingSignUp ? (
+                  <>
+                    <LoaderCircle size={16} className="spinning-icon" />
+                    Creating Account...
+                  </>
+                ) : (
+                  "Sign Up"
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {activePolicyModal ? (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={activePolicyModal === "terms" ? "Terms of Service" : "Privacy Policy"}
+          onClick={closePolicyModal}
+        >
+          <div className="policy-modal" onClick={(event) => event.stopPropagation()}>
+            <h3 className="policy-modal-title">
+              {activePolicyModal === "terms" ? "Terms of Service" : "Privacy Policy"}
+            </h3>
+            <p className="policy-modal-body">
+              {activePolicyModal === "terms"
+                ? "Placeholder: Terms of Service details will appear here, including account use, ordering terms, and service availability language."
+                : "Placeholder: Privacy Policy details will appear here, including data collection, usage, storage, and contact information."}
+            </p>
+            <button
+              type="button"
+              className="secondary-btn policy-modal-close-btn"
+              onClick={closePolicyModal}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {isCartModalOpen ? (
         <div
           className="modal-overlay"
@@ -1559,8 +2221,18 @@ function App() {
 
             {orderSuccessMessageVisible ? (
               <div className="checkout-success">
-                <ThumbsUp size={40} />
-                <p>Order placed.</p>
+                <h3>Contrats! you earned rewards points!</h3>
+                <div
+                  className="rewards-wheel"
+                  style={{
+                    background: `conic-gradient(var(--lion-green-dark) ${rewardWheelProgress}%, #dde4df ${rewardWheelProgress}% 100%)`,
+                  }}
+                >
+                  <div className="rewards-wheel-inner">
+                    <strong>{rewardCounter}</strong>
+                  </div>
+                </div>
+                <p className="rewards-earned">+{rewardPointsEarned} points</p>
               </div>
             ) : (
               <>
@@ -1684,6 +2356,18 @@ function App() {
             )}
           </div>
         </div>
+      ) : null}
+
+      {isReservationsModalOpen ? (
+        <ReservationsModal
+          isOpen={isReservationsModalOpen}
+          onClose={() => setIsReservationsModalOpen(false)}
+          isAuthenticated={Boolean(loggedInUserName)}
+          userName={loggedInUserName}
+          buildApiUrl={buildApiUrl}
+          paymentMethodOptions={paymentMethodOptions}
+          onSignIn={handleReservationSignIn}
+        />
       ) : null}
 
       <footer className="footer">

@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowLeft, Check, ChevronDown } from 'lucide-react-native';
-import { useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Check } from 'lucide-react-native';
+import { useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -20,62 +20,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/auth-context';
 import { BrandColors } from '@/constants/theme';
+import { usersApi } from '@/lib/api';
 
 type PolicyType = 'terms' | 'privacy' | null;
-
-const stateAbbreviations = [
-  'AL',
-  'AK',
-  'AZ',
-  'AR',
-  'CA',
-  'CO',
-  'CT',
-  'DE',
-  'FL',
-  'GA',
-  'HI',
-  'ID',
-  'IL',
-  'IN',
-  'IA',
-  'KS',
-  'KY',
-  'LA',
-  'ME',
-  'MD',
-  'MA',
-  'MI',
-  'MN',
-  'MS',
-  'MO',
-  'MT',
-  'NE',
-  'NV',
-  'NH',
-  'NJ',
-  'NM',
-  'NY',
-  'NC',
-  'ND',
-  'OH',
-  'OK',
-  'OR',
-  'PA',
-  'RI',
-  'SC',
-  'SD',
-  'TN',
-  'TX',
-  'UT',
-  'VT',
-  'VA',
-  'WA',
-  'WV',
-  'WI',
-  'WY',
-  'DC',
-] as const;
 
 function formatPhoneNumber(value: string) {
   const digitsOnly = value.replace(/\D/g, '').slice(0, 10);
@@ -92,47 +39,31 @@ function formatPhoneNumber(value: string) {
 }
 
 export default function SignUpScreen() {
-  const { beginDemoSession } = useAuth();
+  const { signIn } = useAuth();
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [emailAddress, setEmailAddress] = useState('');
+  const [userName, setUserName] = useState('');
+  const [password, setPassword] = useState('');
   const [streetAddress, setStreetAddress] = useState('');
   const [city, setCity] = useState('');
   const [stateCode, setStateCode] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [hasAgreed, setHasAgreed] = useState(false);
+  const [signUpErrorMessage, setSignUpErrorMessage] = useState<string | null>(null);
   const [activePolicyModal, setActivePolicyModal] = useState<PolicyType>(null);
-  const [isStateListVisible, setIsStateListVisible] = useState(false);
   const [isSigningUp, setIsSigningUp] = useState(false);
   const coffeeFillProgress = useRef(new Animated.Value(0)).current;
   const { height: screenHeight } = useWindowDimensions();
-  const stateListRows = useMemo(() => {
-    const rows: Array<Array<(typeof stateAbbreviations)[number]>> = [];
-
-    for (let i = 0; i < stateAbbreviations.length; i += 8) {
-      rows.push(stateAbbreviations.slice(i, i + 8));
-    }
-
-    return rows;
-  }, []);
 
   const onPhoneChange = (value: string) => {
     setPhoneNumber(formatPhoneNumber(value));
   };
+  const onStateChange = (value: string) => {
+    setStateCode(value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2));
+  };
 
   const closePolicyModal = () => setActivePolicyModal(null);
-  const closeStateList = () => setIsStateListVisible(false);
-  const chooseState = (nextState: (typeof stateAbbreviations)[number]) => {
-    setStateCode(nextState);
-    closeStateList();
-  };
-  const toggleStateList = () => {
-    if (isSigningUp) {
-      return;
-    }
-
-    setIsStateListVisible((previous) => !previous);
-  };
   const coffeeFillTranslateY = coffeeFillProgress.interpolate({
     inputRange: [0, 1],
     outputRange: [screenHeight, 0],
@@ -143,31 +74,86 @@ export default function SignUpScreen() {
       return;
     }
 
+    const trimmedName = name.trim();
+    const trimmedPhone = phoneNumber.trim();
+    const trimmedEmail = emailAddress.trim();
+    const trimmedUserName = userName.trim();
+    const trimmedPassword = password;
+    const trimmedAddress = streetAddress.trim();
+    const phoneDigits = trimmedPhone.replace(/\D/g, '');
+
+    if (!trimmedName || !trimmedPhone || !trimmedEmail || !trimmedUserName || !trimmedPassword || !trimmedAddress) {
+      setSignUpErrorMessage(
+        'Name, phone number, email, user name, password, and address are required.'
+      );
+      return;
+    }
+
+    if (!trimmedEmail.includes('@')) {
+      setSignUpErrorMessage('Enter a valid email address.');
+      return;
+    }
+
+    if (phoneDigits.length !== 10) {
+      setSignUpErrorMessage('Enter a valid 10-digit phone number.');
+      return;
+    }
+
+    if (!hasAgreed) {
+      setSignUpErrorMessage('You must agree to the terms and privacy policy.');
+      return;
+    }
+
     setIsSigningUp(true);
+    setSignUpErrorMessage(null);
     closePolicyModal();
-    closeStateList();
     coffeeFillProgress.setValue(0);
 
-    // TODO: Replace this presentation flow with a real backend call to a new public signup endpoint.
-    // TODO: Send name, phoneNumber, emailAddress, streetAddress, city, stateCode, zipCode, and hasAgreed.
-    // TODO: Handle endpoint validation errors and show field-level messages before running success animation.
-    const didFinish = await new Promise<boolean>((resolve) => {
-      Animated.timing(coffeeFillProgress, {
-        toValue: 1,
-        duration: 4000,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => resolve(finished));
-    });
+    try {
+      const [firstName, ...lastNameParts] = trimmedName.split(/\s+/);
+      const lastName = lastNameParts.join(' ').trim() || 'Customer';
 
-    if (!didFinish) {
+      await usersApi.create({
+        userName: trimmedUserName,
+        password: trimmedPassword,
+        roles: ['User'],
+        firstName,
+        lastName,
+        email: trimmedEmail,
+        phoneNumber: trimmedPhone,
+        address: trimmedAddress,
+        city: city.trim(),
+        state: stateCode.trim(),
+        zipCode: zipCode.trim(),
+        pridePoints: 0,
+        hasAgreedToPolicies: hasAgreed,
+      });
+
+      await signIn(trimmedUserName, trimmedPassword);
+
+      const didFinish = await new Promise<boolean>((resolve) => {
+        Animated.timing(coffeeFillProgress, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(({ finished }) => resolve(finished));
+      });
+
+      if (!didFinish) {
+        setIsSigningUp(false);
+        coffeeFillProgress.setValue(0);
+        return;
+      }
+
+      router.replace('/(app)/home');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Sign up failed';
+      setSignUpErrorMessage(message);
       setIsSigningUp(false);
       coffeeFillProgress.setValue(0);
       return;
     }
-
-    beginDemoSession(name.trim());
-    router.replace('/(app)/home');
   };
 
   return (
@@ -198,33 +184,33 @@ export default function SignUpScreen() {
           </ThemedText>
 
           <View style={styles.form}>
-            <View style={styles.fieldGroup}>
-              <ThemedText style={styles.fieldLabel}>Name</ThemedText>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                onFocus={closeStateList}
-                autoCapitalize="words"
-                placeholder="Enter your full name"
-                placeholderTextColor={BrandColors.darkAccent}
-                style={styles.input}
-                editable={!isSigningUp}
-              />
-            </View>
+            <View style={styles.twoColumnRow}>
+              <View style={[styles.fieldGroup, styles.twoColumnField]}>
+                <ThemedText style={styles.fieldLabel}>Name</ThemedText>
+                <TextInput
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                  placeholder="Enter your full name"
+                  placeholderTextColor={BrandColors.darkAccent}
+                  style={styles.input}
+                  editable={!isSigningUp}
+                />
+              </View>
 
-            <View style={styles.fieldGroup}>
-              <ThemedText style={styles.fieldLabel}>Phone Number</ThemedText>
-              <TextInput
-                value={phoneNumber}
-                onChangeText={onPhoneChange}
-                onFocus={closeStateList}
-                keyboardType="phone-pad"
-                placeholder="Enter your phone number"
-                placeholderTextColor={BrandColors.darkAccent}
-                maxLength={12}
-                style={styles.input}
-                editable={!isSigningUp}
-              />
+              <View style={[styles.fieldGroup, styles.twoColumnField]}>
+                <ThemedText style={styles.fieldLabel}>Phone Number</ThemedText>
+                <TextInput
+                  value={phoneNumber}
+                  onChangeText={onPhoneChange}
+                  keyboardType="phone-pad"
+                  placeholder="Enter your phone number"
+                  placeholderTextColor={BrandColors.darkAccent}
+                  maxLength={12}
+                  style={styles.input}
+                  editable={!isSigningUp}
+                />
+              </View>
             </View>
 
             <View style={styles.fieldGroup}>
@@ -232,7 +218,6 @@ export default function SignUpScreen() {
               <TextInput
                 value={emailAddress}
                 onChangeText={setEmailAddress}
-                onFocus={closeStateList}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 placeholder="Enter your email address"
@@ -242,12 +227,42 @@ export default function SignUpScreen() {
               />
             </View>
 
+            <View style={styles.twoColumnRow}>
+              <View style={[styles.fieldGroup, styles.twoColumnField]}>
+                <ThemedText style={styles.fieldLabel}>User Name</ThemedText>
+                <TextInput
+                  value={userName}
+                  onChangeText={setUserName}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="Choose a user name"
+                  placeholderTextColor={BrandColors.darkAccent}
+                  style={styles.input}
+                  editable={!isSigningUp}
+                />
+              </View>
+
+              <View style={[styles.fieldGroup, styles.twoColumnField]}>
+                <ThemedText style={styles.fieldLabel}>Password</ThemedText>
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="Enter your password"
+                  placeholderTextColor={BrandColors.darkAccent}
+                  style={styles.input}
+                  editable={!isSigningUp}
+                />
+              </View>
+            </View>
+
             <View style={styles.fieldGroup}>
               <ThemedText style={styles.fieldLabel}>Street Address</ThemedText>
               <TextInput
                 value={streetAddress}
                 onChangeText={setStreetAddress}
-                onFocus={closeStateList}
                 autoCapitalize="words"
                 placeholder="Enter your street address"
                 placeholderTextColor={BrandColors.darkAccent}
@@ -262,7 +277,6 @@ export default function SignUpScreen() {
                 <TextInput
                   value={city}
                   onChangeText={setCity}
-                  onFocus={closeStateList}
                   autoCapitalize="words"
                   placeholder="City"
                   placeholderTextColor={BrandColors.darkAccent}
@@ -272,27 +286,22 @@ export default function SignUpScreen() {
               </View>
               <View style={[styles.fieldGroup, styles.stateField]}>
                 <ThemedText style={styles.fieldLabel}>State</ThemedText>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.stateDropdown,
-                    isStateListVisible && styles.stateDropdownOpen,
-                    pressed && styles.stateDropdownPressed,
-                    isSigningUp && styles.stateDropdownDisabled,
-                  ]}
-                  onPress={toggleStateList}
-                  disabled={isSigningUp}>
-                  <ThemedText style={[styles.stateDropdownText, !stateCode && styles.stateDropdownPlaceholder]}>
-                    {stateCode || 'Select'}
-                  </ThemedText>
-                  <ChevronDown color={BrandColors.darkAccent} size={16} />
-                </Pressable>
+                <TextInput
+                  value={stateCode}
+                  onChangeText={onStateChange}
+                  autoCapitalize="characters"
+                  placeholder="LA"
+                  placeholderTextColor={BrandColors.darkAccent}
+                  maxLength={2}
+                  style={styles.input}
+                  editable={!isSigningUp}
+                />
               </View>
               <View style={[styles.fieldGroup, styles.zipField]}>
                 <ThemedText style={styles.fieldLabel}>Zip</ThemedText>
                 <TextInput
                   value={zipCode}
                   onChangeText={setZipCode}
-                  onFocus={closeStateList}
                   keyboardType="number-pad"
                   placeholder="70401"
                   placeholderTextColor={BrandColors.darkAccent}
@@ -302,36 +311,9 @@ export default function SignUpScreen() {
                 />
               </View>
             </View>
-
-            {isStateListVisible ? (
-              <View style={styles.stateListCard}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.stateListRows}
-                  keyboardShouldPersistTaps="handled">
-                  {stateListRows.map((row, rowIndex) => (
-                    <View key={`state-row-${rowIndex}`} style={styles.stateListRow}>
-                      {row.map((abbr) => (
-                        <Pressable
-                          key={abbr}
-                          style={({ pressed }) => [
-                            styles.stateChip,
-                            stateCode === abbr && styles.stateChipSelected,
-                            pressed && styles.stateChipPressed,
-                          ]}
-                          onPress={() => chooseState(abbr)}>
-                          <ThemedText style={[styles.stateChipText, stateCode === abbr && styles.stateChipTextSelected]}>
-                            {abbr}
-                          </ThemedText>
-                        </Pressable>
-                      ))}
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
-            ) : null}
           </View>
+
+          {signUpErrorMessage ? <ThemedText style={styles.formError}>{signUpErrorMessage}</ThemedText> : null}
 
           <View style={styles.agreementRow}>
             <Pressable
@@ -454,6 +436,13 @@ const styles = StyleSheet.create({
   form: {
     gap: 12,
   },
+  twoColumnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  twoColumnField: {
+    flex: 1,
+  },
   fieldGroup: {
     gap: 6,
   },
@@ -484,76 +473,11 @@ const styles = StyleSheet.create({
   zipField: {
     flex: 1.1,
   },
-  stateDropdown: {
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
-    borderRadius: 10,
-    height: 44,
-    paddingHorizontal: 12,
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  stateDropdownOpen: {
-    borderColor: BrandColors.primary,
-  },
-  stateDropdownPressed: {
-    opacity: 0.86,
-  },
-  stateDropdownDisabled: {
-    opacity: 0.84,
-  },
-  stateDropdownText: {
-    color: BrandColors.darkAccent,
-    fontWeight: '600',
+  formError: {
+    marginTop: 12,
+    color: '#9E1A1A',
     fontSize: 13,
-  },
-  stateDropdownPlaceholder: {
-    color: BrandColors.text,
-  },
-  stateListCard: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-  },
-  stateListRows: {
-    gap: 8,
-  },
-  stateListRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  stateChip: {
-    minWidth: 38,
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
-    borderRadius: 999,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: BrandColors.secondary,
-  },
-  stateChipSelected: {
-    borderColor: BrandColors.primary,
-    backgroundColor: '#ecfff6',
-  },
-  stateChipPressed: {
-    opacity: 0.84,
-  },
-  stateChipText: {
-    color: BrandColors.darkAccent,
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  stateChipTextSelected: {
-    color: BrandColors.primary,
+    lineHeight: 18,
   },
   agreementRow: {
     marginTop: 16,

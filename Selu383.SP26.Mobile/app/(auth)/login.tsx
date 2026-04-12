@@ -67,7 +67,7 @@ export default function LoginScreen() {
           style={({ pressed }) => [styles.badge, pressed && styles.badgePressed]}
           onPress={() => router.push('/(auth)/fast-pickup')}>
           <Coffee color={BrandColors.primary} size={16} />
-          <ThemedText style={styles.badgeText}>Fast Pickup</ThemedText>
+          <ThemedText style={styles.badgeText}>Fast Order</ThemedText>
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.badge, pressed && styles.badgePressed]}

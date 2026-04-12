@@ -1,15 +1,16 @@
 import { Image } from 'expo-image';
 import { Redirect, Tabs, useRouter } from 'expo-router';
-import { CalendarCheck2, Check, ChevronDown, House, Minus, Plus, ShoppingCart, ThumbsUp, User, Utensils, X } from 'lucide-react-native';
+import { CalendarCheck2, Check, ChevronDown, House, Minus, Plus, ShoppingCart, User, Utensils, X } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandedLoadingScreen } from '@/components/branded-loading-screen';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/context/auth-context';
 import { useCart } from '@/context/cart-context';
 import { BrandColors } from '@/constants/theme';
-import { locationsApi, ordersApi, type LocationDto } from '@/lib/api';
+import { locationsApi, ordersApi, usersApi, type LocationDto } from '@/lib/api';
 
 const pickupOptions = ['In Store', 'Drive Through'] as const;
 
@@ -55,6 +56,12 @@ type DropdownFieldProps = {
 function formatCurrency(value: number) {
   return `$${value.toFixed(2)}`;
 }
+
+function calculateRewardPoints(orderTotal: number) {
+  return Math.max(0, Math.round(orderTotal * 10));
+}
+const rewardsCounterDurationMs = 1200;
+const rewardsPopupHoldMs = 3000;
 
 function DropdownField({
   label,
@@ -119,8 +126,9 @@ function AppBanner({ cartCount, onCartPress }: { cartCount: number; onCartPress:
 
 export default function AppLayout() {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, refreshSession } = useAuth();
   const { cartCount, cartItems, subtotal, clearCart, incrementItem, decrementItem, removeItem } = useCart();
+  const insets = useSafeAreaInsets();
 
   const [isCartModalVisible, setCartModalVisible] = useState(false);
   const [isCheckoutModalVisible, setCheckoutModalVisible] = useState(false);
@@ -134,7 +142,10 @@ export default function AppLayout() {
   const [isSubmittingOrder, setSubmittingOrder] = useState(false);
   const [orderErrorMessage, setOrderErrorMessage] = useState<string | null>(null);
   const [orderSuccessVisible, setOrderSuccessVisible] = useState(false);
+  const [rewardPointsEarned, setRewardPointsEarned] = useState(0);
+  const [rewardCounter, setRewardCounter] = useState(0);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rewardCounterTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const locationOptions = useMemo<DropdownOption[]>(
     () =>
@@ -155,6 +166,9 @@ export default function AppLayout() {
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
       }
+      if (rewardCounterTimerRef.current) {
+        clearInterval(rewardCounterTimerRef.current);
+      }
     };
   }, []);
 
@@ -163,11 +177,17 @@ export default function AppLayout() {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
+    if (rewardCounterTimerRef.current) {
+      clearInterval(rewardCounterTimerRef.current);
+      rewardCounterTimerRef.current = null;
+    }
     setCartModalVisible(false);
     setCheckoutModalVisible(false);
     setActiveDropdown(null);
     setOrderErrorMessage(null);
     setOrderSuccessVisible(false);
+    setRewardPointsEarned(0);
+    setRewardCounter(0);
   };
 
   const handleKeepShopping = () => {
@@ -202,8 +222,57 @@ export default function AppLayout() {
     setCheckoutModalVisible(true);
     setOrderErrorMessage(null);
     setOrderSuccessVisible(false);
+    setRewardPointsEarned(0);
+    setRewardCounter(0);
     setActiveDropdown(null);
     void fetchLocations();
+  };
+
+  const startRewardCounterAnimation = (pointsToAdd: number) => {
+    setRewardPointsEarned(pointsToAdd);
+    setRewardCounter(0);
+
+    if (rewardCounterTimerRef.current) {
+      clearInterval(rewardCounterTimerRef.current);
+      rewardCounterTimerRef.current = null;
+    }
+
+    if (pointsToAdd <= 0) {
+      return;
+    }
+
+    const startedAt = Date.now();
+
+    rewardCounterTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const progress = Math.min(1, elapsed / rewardsCounterDurationMs);
+      const nextValue = Math.floor(pointsToAdd * progress);
+
+      setRewardCounter(nextValue);
+
+      if (progress >= 1) {
+        setRewardCounter(pointsToAdd);
+        if (rewardCounterTimerRef.current) {
+          clearInterval(rewardCounterTimerRef.current);
+          rewardCounterTimerRef.current = null;
+        }
+      }
+    }, 30);
+  };
+
+  const applyRewardsFromOrder = async (pointsToAdd: number) => {
+    if (pointsToAdd <= 0 || !user || user.id <= 0) {
+      return;
+    }
+
+    try {
+      // Fetch current points first, then increment via API update.
+      await usersApi.getById(user.id);
+      await usersApi.awardRewards(user.id, { pointsToAdd });
+      await refreshSession();
+    } catch {
+      // Do not fail order completion if rewards update fails.
+    }
   };
 
   const handlePlaceOrder = async () => {
@@ -238,6 +307,9 @@ export default function AppLayout() {
         })),
       });
 
+      const pointsToAdd = calculateRewardPoints(subtotal);
+      await applyRewardsFromOrder(pointsToAdd);
+      startRewardCounterAnimation(pointsToAdd);
       setOrderSuccessVisible(true);
 
       if (closeTimerRef.current) {
@@ -248,7 +320,7 @@ export default function AppLayout() {
         clearCart();
         closeAllModals();
         closeTimerRef.current = null;
-      }, 2000);
+      }, rewardsCounterDurationMs + rewardsPopupHoldMs);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Order failed';
       setOrderErrorMessage(message);
@@ -272,7 +344,13 @@ export default function AppLayout() {
           header: () => <AppBanner cartCount={cartCount} onCartPress={() => setCartModalVisible(true)} />,
           tabBarActiveTintColor: BrandColors.primary,
           tabBarInactiveTintColor: BrandColors.primary,
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: [
+            styles.tabBar,
+            {
+              height: 74 + insets.bottom,
+              paddingBottom: Math.max(10, insets.bottom),
+            },
+          ],
           tabBarLabelStyle: styles.tabLabel,
           tabBarButton: ({ style, children, onPress, onLongPress, accessibilityState, accessibilityLabel, testID }) => (
             <Pressable
@@ -424,8 +502,13 @@ export default function AppLayout() {
 
             {orderSuccessVisible ? (
               <View style={styles.successWrap}>
-                <ThumbsUp color={BrandColors.primary} size={40} />
-                <ThemedText style={styles.successText}>Order placed.</ThemedText>
+                <ThemedText style={styles.rewardsHeaderText}>Contrats! you earned rewards points!</ThemedText>
+                <View style={styles.rewardsWheel}>
+                  <View style={styles.rewardsWheelInner}>
+                    <ThemedText style={styles.rewardsWheelValue}>{rewardCounter}</ThemedText>
+                  </View>
+                </View>
+                <ThemedText style={styles.rewardsEarnedText}>+{rewardPointsEarned} points</ThemedText>
               </View>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.checkoutBody}>
@@ -906,7 +989,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 24,
-    gap: 10,
+    gap: 12,
+  },
+  rewardsHeaderText: {
+    color: BrandColors.primary,
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  rewardsWheel: {
+    width: 126,
+    height: 126,
+    borderRadius: 63,
+    borderWidth: 8,
+    borderColor: BrandColors.primary,
+    backgroundColor: '#ecfff6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rewardsWheelInner: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rewardsWheelValue: {
+    color: BrandColors.primary,
+    fontSize: 32,
+    fontWeight: '700',
+    lineHeight: 36,
+  },
+  rewardsEarnedText: {
+    color: BrandColors.darkAccent,
+    fontSize: 16,
+    fontWeight: '700',
   },
   successText: {
     color: BrandColors.primary,

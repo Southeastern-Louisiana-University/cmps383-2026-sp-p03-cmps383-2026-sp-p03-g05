@@ -42,7 +42,9 @@ jobs:
           EAS_LOCAL_BUILD_ARTIFACTS_DIR: ${{ runner.temp }}
 
       - name: 🚀 Build app
-        run: cd ./Selu383.SP26.Mobile/ && eas build -p android --non-interactive --local
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ vars.EXPO_PUBLIC_API_BASE_URL }}
+        run: cd ./Selu383.SP26.Mobile/ && eas build -p android --profile production --non-interactive --local
 
       - name: 🛳️ Make Release
         uses: "marvinpinto/action-automatic-releases@latest"

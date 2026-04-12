@@ -6,7 +6,9 @@ using Selu383.SP26.Api.Features.Items;
 using Selu383.SP26.Api.Features.Locations;
 using Selu383.SP26.Api.Features.Orders;
 using Selu383.SP26.Api.Features.Payments;
+using Selu383.SP26.Api.Features.Reservations;
 using Selu383.SP26.Api.Features.Rewards;
+using Selu383.SP26.Api.Features.Tables;
 
 namespace Selu383.SP26.Api.Data;
 
@@ -23,6 +25,8 @@ public class DataContext : IdentityDbContext<User, Role, int, IdentityUserClaim<
     public DbSet<Order> Orders { get; set; }
     public DbSet<OrderStatus> OrderStatuses { get; set; }
     public DbSet<OrderMenuItem> OrderMenuItems { get; set; }
+    public DbSet<Table> Tables { get; set; }
+    public DbSet<Reservation> Reservations { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
