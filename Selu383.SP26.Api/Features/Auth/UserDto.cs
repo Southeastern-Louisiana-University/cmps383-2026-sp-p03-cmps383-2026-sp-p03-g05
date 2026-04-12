@@ -15,3 +15,9 @@ public class UserDto
 
     public string[] Roles { get; set; } = Array.Empty<string>();
 }
+
+public class FastOrderUserLookupDto
+{
+    public int Id { get; set; }
+    public string UserName { get; set; } = string.Empty;
+}

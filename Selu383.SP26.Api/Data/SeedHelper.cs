@@ -62,6 +62,7 @@ public static class SeedHelper
                 UserName = "bob",
                 FirstName = "Bob",
                 LastName = "Builder",
+                PhoneNumber = "985-867-5309",
                 RewardsTotal = 195
             };
             await userManager.CreateAsync(bob, defaultPassword);
@@ -70,9 +71,29 @@ public static class SeedHelper
         {
             await userManager.AddToRoleAsync(bob, RoleNames.User);
         }
+        var shouldUpdateBob = false;
         if (bob.RewardsTotal != 195)
         {
             bob.RewardsTotal = 195;
+            shouldUpdateBob = true;
+        }
+        if (bob.FirstName != "Bob")
+        {
+            bob.FirstName = "Bob";
+            shouldUpdateBob = true;
+        }
+        if (bob.LastName != "Builder")
+        {
+            bob.LastName = "Builder";
+            shouldUpdateBob = true;
+        }
+        if (bob.PhoneNumber != "985-867-5309")
+        {
+            bob.PhoneNumber = "985-867-5309";
+            shouldUpdateBob = true;
+        }
+        if (shouldUpdateBob)
+        {
             await userManager.UpdateAsync(bob);
         }
 

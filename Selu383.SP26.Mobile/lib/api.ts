@@ -20,8 +20,15 @@ export type CreateUserDto = {
   city?: string;
   state?: string;
   zipCode?: string;
+  email?: string;
+  phoneNumber?: string;
   pridePoints: number;
   hasAgreedToPolicies: boolean;
+};
+
+export type FastOrderUserLookupDto = {
+  id: number;
+  userName: string;
 };
 
 export type LocationDto = {
@@ -175,6 +182,11 @@ export const usersApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  lookupByProfile: (payload: { firstName: string; lastName: string; phoneNumber: string }) =>
+    request<FastOrderUserLookupDto | null>(
+      `/api/users/lookup?firstName=${encodeURIComponent(payload.firstName)}&lastName=${encodeURIComponent(payload.lastName)}&phoneNumber=${encodeURIComponent(payload.phoneNumber)}`,
+      { allowNotFound: true }
+    ),
   getById: (id: number) => request<UserDto>(`/api/users/${id}`),
   awardRewards: (id: number, payload: AwardRewardsDto) =>
     request<AwardRewardsResultDto>(`/api/users/${id}/rewards`, {

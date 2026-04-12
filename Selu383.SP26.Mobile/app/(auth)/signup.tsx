@@ -119,6 +119,8 @@ export default function SignUpScreen() {
         roles: ['User'],
         firstName,
         lastName,
+        email: trimmedEmail,
+        phoneNumber: trimmedPhone,
         address: trimmedAddress,
         city: city.trim(),
         state: stateCode.trim(),
