@@ -50,6 +50,7 @@ import gpayImg from "./assets/gpay.png";
 import CustomerPage from "./customerpage";
 import EmployeeDashboard from "./EmployeeDashboard";
 import ReservationsModal, { type ReservationLoginPayload } from "./reservations";
+import MenuEditor from "./MenuEditor";
 
 const menuItemImages: Record<string, string> = {
   "Iced Latte": icedLateImg,
@@ -401,6 +402,7 @@ const formatPhoneNumber = (value: string) => {
   return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6)}`;
 };
 
+const menuEditorPath = "/menu-editor";
 const calculateRewardPoints = (orderTotal: number) =>
   Math.max(0, Math.round(orderTotal * 10));
 const rewardsCounterDurationMs = 1200;
@@ -529,6 +531,7 @@ function App() {
   const authControlRef = useRef<HTMLDivElement | null>(null);
   const navAreaRef = useRef<HTMLDivElement | null>(null);
 
+  const isMenuEditorPage = currentPath === menuEditorPath;
   const isCustomerPage = currentPath === customerPagePath;
   const isEmployeeDashboardPage = currentPath === employeeDashboardPath;
   const isEmployeeOrAdmin =
@@ -1730,19 +1733,29 @@ function App() {
       ) : null}
 
       {isEmployeeDashboardPage && isEmployeeOrAdmin ? (
-        <EmployeeDashboard
+  <EmployeeDashboard
     userName={loggedInUserName ?? "Staff"}
     roles={userRoles}
     buildApiUrl={buildApiUrl}
-/>
-      ) : null}
+    onOpenMenuEditor={() => navigateToPath(menuEditorPath)}
+  />
+) : null}
+
+{isMenuEditorPage && isEmployeeOrAdmin ? (
+  <MenuEditor
+    buildApiUrl={buildApiUrl}
+    onBack={() => navigateToPath(employeeDashboardPath)}
+  />
+) : null}
 
       <main
         style={{
           display:
-            isCustomerPage || (isEmployeeDashboardPage && isEmployeeOrAdmin)
-              ? "none"
-              : undefined,
+        isCustomerPage ||
+        (isEmployeeDashboardPage && isEmployeeOrAdmin) ||
+        (isMenuEditorPage && isEmployeeOrAdmin)
+          ? "none"
+          : undefined,
         }}
       >
         <section className="hero">

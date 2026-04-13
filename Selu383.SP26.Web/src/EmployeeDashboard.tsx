@@ -4,6 +4,7 @@ type EmployeeDashboardProps = {
   userName: string;
   roles: string[];
   buildApiUrl: (path: string) => string;
+  onOpenMenuEditor: () => void;
 };
 
 type OrderRow = {
@@ -21,6 +22,7 @@ export default function EmployeeDashboard({
   userName,
   roles,
   buildApiUrl,
+  onOpenMenuEditor,
 }: EmployeeDashboardProps) {
   const isAdmin = roles.some((role) => role.toLowerCase() === "admin");
 
@@ -267,7 +269,7 @@ export default function EmployeeDashboard({
             <button
               type="button"
               className="employee-tool-btn"
-              onClick={() => handleToolClick("Edit Menu")}
+              onClick={onOpenMenuEditor}
             >
               Edit Menu
             </button>
