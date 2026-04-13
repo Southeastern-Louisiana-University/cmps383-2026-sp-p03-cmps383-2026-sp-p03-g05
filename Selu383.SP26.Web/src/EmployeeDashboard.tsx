@@ -35,6 +35,8 @@ export default function EmployeeDashboard({
   const [locationFilter, setLocationFilter] = useState("");
   const [pickupMethodFilter, setPickupMethodFilter] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState("");
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [pendingCompleteOrderId, setPendingCompleteOrderId] = useState<number | null>(null);
 
   const loadOrders = useCallback(
     async (showLoader = false) => {
@@ -142,13 +144,17 @@ export default function EmployeeDashboard({
       const matchesOrderStatus =
         orderStatusFilter === "" || currentStatus === orderStatusFilter;
 
+      const hideCompletedFromMainView =
+        orderStatusFilter === "" && currentStatus === "Completed";
+
       return (
         matchesLastName &&
         matchesFirstName &&
         matchesPhone &&
         matchesLocation &&
         matchesPickupMethod &&
-        matchesOrderStatus
+        matchesOrderStatus &&
+        !hideCompletedFromMainView
       );
     });
   }, [
@@ -171,6 +177,12 @@ export default function EmployeeDashboard({
   };
 
   const handleStatusChange = async (orderId: number, newStatus: string) => {
+    if (newStatus === "Completed") {
+      setPendingCompleteOrderId(orderId);
+      setShowCompleteConfirm(true);
+      return;
+    }
+
     setOrderStatuses((previous) => ({
       ...previous,
       [orderId]: newStatus,
@@ -196,6 +208,48 @@ export default function EmployeeDashboard({
       console.error("Failed to update status", err);
       setError("Could not save order status.");
     }
+  };
+
+  const confirmCompleteOrder = async () => {
+    if (pendingCompleteOrderId === null) {
+      return;
+    }
+
+    const orderId = pendingCompleteOrderId;
+
+    setOrderStatuses((previous) => ({
+      ...previous,
+      [orderId]: "Completed",
+    }));
+
+    try {
+      const response = await fetch(buildApiUrl(`/api/orders/${orderId}/status`), {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "Completed" }),
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Failed to update status (${response.status})`);
+      }
+
+      setShowCompleteConfirm(false);
+      setPendingCompleteOrderId(null);
+
+      await loadOrders(false);
+    } catch (err) {
+      console.error("Failed to complete order", err);
+      setError("Could not complete order.");
+    }
+  };
+
+  const cancelCompleteOrder = () => {
+    setShowCompleteConfirm(false);
+    setPendingCompleteOrderId(null);
   };
 
   const handleToolClick = (toolName: string) => {
@@ -397,6 +451,36 @@ export default function EmployeeDashboard({
           })}
         </div>
       </section>
+
+      {showCompleteConfirm ? (
+        <div className="employee-modal-overlay">
+          <div className="employee-confirm-modal">
+            <h3>Confirm Completed Order</h3>
+            <p>
+              Are you sure you want to mark this order as completed? Once completed,
+              it will be removed from the main order cards.
+            </p>
+
+            <div className="employee-confirm-actions">
+              <button
+                type="button"
+                className="employee-confirm-btn"
+                onClick={confirmCompleteOrder}
+              >
+                Yes, Complete Order
+              </button>
+
+              <button
+                type="button"
+                className="employee-cancel-btn"
+                onClick={cancelCompleteOrder}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
