@@ -7,6 +7,7 @@ type EmployeeDashboardProps = {
 };
 
 type OrderRow = {
+  id: number;
   lastName: string;
   firstName: string;
   phone: string;
@@ -24,6 +25,7 @@ export default function EmployeeDashboard({
   const isAdmin = roles.some((role) => role.toLowerCase() === "admin");
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [orderStatuses, setOrderStatuses] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -34,66 +36,75 @@ export default function EmployeeDashboard({
   const [pickupMethodFilter, setPickupMethodFilter] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState("");
 
-useEffect(() => {
-  const loadOrders = async () => {
-    try {
-      setLoading(true);
-      setError("");
+  useEffect(() => {
+    const loadOrders = async () => {
+      try {
+        setLoading(true);
+        setError("");
 
-      type ApiOrder = {
-        lastName: string;
-        firstName: string;
-        phone: string;
-        location: string;
-        pickupMethod: string;
-        orderStatus: string;
-        orderNumber: number;
-      };
+        type ApiOrder = {
+          lastName: string;
+          firstName: string;
+          phone: string;
+          location: string;
+          pickupMethod: string;
+          orderStatus: string;
+          orderNumber: number;
+        };
 
-      const response = await fetch(buildApiUrl("/api/orders"), {
-  credentials: "include",
-});;
+        const response = await fetch(buildApiUrl("/api/orders"), {
+          credentials: "include",
+        });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          setError("You are not logged in.");
-          return;
+        if (!response.ok) {
+          if (response.status === 401) {
+            setError("You are not logged in.");
+            return;
+          }
+
+          if (response.status === 403) {
+            setError("You do not have permission to view orders.");
+            return;
+          }
+
+          throw new Error(`Failed to load orders (${response.status})`);
         }
 
-        if (response.status === 403) {
-          setError("You do not have permission to view orders.");
-          return;
-        }
+        const data: ApiOrder[] = await response.json();
 
-        throw new Error(`Failed to load orders (${response.status})`);
+        const mappedOrders: OrderRow[] = data.map((order) => ({
+          id: order.orderNumber,
+          lastName: order.lastName,
+          firstName: order.firstName,
+          phone: order.phone,
+          location: order.location,
+          pickupMethod: order.pickupMethod,
+          orderStatus: order.orderStatus,
+          viewOrder: `Order #${order.orderNumber}`,
+        }));
+
+        const initialStatuses: Record<number, string> = {};
+        mappedOrders.forEach((order) => {
+          initialStatuses[order.id] = order.orderStatus;
+        });
+
+        setOrders(mappedOrders);
+        setOrderStatuses(initialStatuses);
+      } catch (err) {
+        setError("Could not load orders.");
+        console.error(err);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const data: ApiOrder[] = await response.json();
-
-      const mappedOrders: OrderRow[] = data.map((order) => ({
-        lastName: order.lastName,
-        firstName: order.firstName,
-        phone: order.phone,
-        location: order.location,
-        pickupMethod: order.pickupMethod,
-        orderStatus: order.orderStatus,
-        viewOrder: `Order #${order.orderNumber}`,
-      }));
-
-      setOrders(mappedOrders);
-    } catch (err) {
-      setError("Could not load orders.");
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  loadOrders();
-}, []);
+    loadOrders();
+  }, [buildApiUrl]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
+      const currentStatus = orderStatuses[order.id] ?? order.orderStatus;
+
       const matchesLastName = order.lastName
         .toLowerCase()
         .includes(lastNameFilter.toLowerCase());
@@ -113,7 +124,7 @@ useEffect(() => {
         pickupMethodFilter === "" || order.pickupMethod === pickupMethodFilter;
 
       const matchesOrderStatus =
-        orderStatusFilter === "" || order.orderStatus === orderStatusFilter;
+        orderStatusFilter === "" || currentStatus === orderStatusFilter;
 
       return (
         matchesLastName &&
@@ -126,6 +137,7 @@ useEffect(() => {
     });
   }, [
     orders,
+    orderStatuses,
     lastNameFilter,
     firstNameFilter,
     phoneFilter,
@@ -141,6 +153,13 @@ useEffect(() => {
     setLocationFilter("");
     setPickupMethodFilter("");
     setOrderStatusFilter("");
+  };
+
+  const handleStatusChange = (orderId: number, newStatus: string) => {
+    setOrderStatuses((previous) => ({
+      ...previous,
+      [orderId]: newStatus,
+    }));
   };
 
   const handleToolClick = (toolName: string) => {
@@ -178,6 +197,14 @@ useEffect(() => {
             >
               Sales Report
             </button>
+
+            <button
+              type="button"
+              className="employee-tool-btn"
+              onClick={() => handleToolClick("Assign Employee")}
+            >
+              Assign Employee
+            </button>
           </div>
         </article>
 
@@ -197,9 +224,9 @@ useEffect(() => {
 
         <article className="employee-card">
           <h2>Locations</h2>
-          <p>Downtown: 2</p>
-          <p>Northside: 1</p>
-          <p>West End: 1</p>
+          <p>123 Main St: 2</p>
+          <p>456 Oak Ave: 1</p>
+          <p>789 Pine Ln: 1</p>
         </article>
       </section>
 
@@ -235,9 +262,9 @@ useEffect(() => {
             onChange={(event) => setLocationFilter(event.target.value)}
           >
             <option value="">All locations</option>
-            <option value="Downtown">Downtown</option>
-            <option value="Northside">Northside</option>
-            <option value="West End">West End</option>
+            <option value="123 Main St">123 Main St</option>
+            <option value="456 Oak Ave">456 Oak Ave</option>
+            <option value="789 Pine Ln">789 Pine Ln</option>
           </select>
 
           <select
@@ -256,10 +283,10 @@ useEffect(() => {
             onChange={(event) => setOrderStatusFilter(event.target.value)}
           >
             <option value="">All statuses</option>
+            <option value="Received">Received</option>
             <option value="In Progress">In Progress</option>
-            <option value="Client Pending">Client Pending</option>
-            <option value="Complete">Complete</option>
-            <option value="No Thanks">No Thanks</option>
+            <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
           </select>
 
           <button
@@ -274,42 +301,59 @@ useEffect(() => {
         {loading ? <p>Loading orders...</p> : null}
         {error ? <p>{error}</p> : null}
 
-        <table className="employee-table">
-          <thead>
-            <tr>
-              <th>Last Name</th>
-              <th>First Name</th>
-              <th>Phone</th>
-              <th>Location</th>
-              <th>Pick Up Method</th>
-              <th>Order Status</th>
-              <th>Order Number</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredOrders.map((order, index) => (
-              <tr key={index}>
-                <td>{order.lastName}</td>
-                <td>{order.firstName}</td>
-                <td>{order.phone}</td>
-                <td>{order.location}</td>
-                <td>{order.pickupMethod}</td>
-                <td>{order.orderStatus}</td>
-                <td>
-                  <button type="button">{order.viewOrder}</button>
-                </td>
-              </tr>
-            ))}
+        <div className="employee-orders-grid">
+          {!loading && filteredOrders.length === 0 ? (
+            <div className="employee-empty-card">
+              No orders match those filters.
+            </div>
+          ) : null}
 
-            {!loading && filteredOrders.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="employee-empty-row">
-                  No orders match those filters.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+          {filteredOrders.map((order) => {
+            const currentStatus = orderStatuses[order.id] ?? order.orderStatus;
+
+            return (
+              <article className="employee-order-card" key={order.id}>
+                <div className="employee-order-card-top">
+                  <h3>{order.viewOrder}</h3>
+
+                  <select
+                    className="employee-order-status-select"
+                    value={currentStatus}
+                    onChange={(event) =>
+                      handleStatusChange(order.id, event.target.value)
+                    }
+                  >
+                    <option value="Received">Received</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div className="employee-order-card-body">
+                  <p>
+                    <strong>Name:</strong> {order.firstName} {order.lastName}
+                  </p>
+                  <p>
+                    <strong>Phone:</strong> {order.phone || "N/A"}
+                  </p>
+                  <p>
+                    <strong>Location:</strong> {order.location}
+                  </p>
+                  <p>
+                    <strong>Pickup:</strong> {order.pickupMethod}
+                  </p>
+                </div>
+
+                <div className="employee-order-card-actions">
+                  <button type="button" className="employee-view-order-btn">
+                    View Order
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </section>
     </main>
   );

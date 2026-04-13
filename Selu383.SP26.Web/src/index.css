@@ -2070,3 +2070,125 @@ a {
     grid-template-columns: 1fr;
   }
 }
+.employee-orders-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.employee-order-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 1.25rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  border: 1px solid #ece7f5;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.employee-order-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.employee-order-card-top h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #3f3563;
+}
+
+.employee-order-status-badge {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.status-received {
+  background: #efe7fb;
+  color: #6a4fb3;
+}
+
+.status-progress {
+  background: #fff4e5;
+  color: #171616;
+}
+
+.status-complete {
+  background: #1fc85a;
+  color: #2e8b57;
+}
+
+.employee-order-card-body {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.employee-order-card-body p {
+  margin: 0;
+  color: #3b3b3b;
+  font-size: 0.95rem;
+}
+
+.employee-order-card-actions {
+  margin-top: auto;
+}
+
+.employee-view-order-btn {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #efe7fb;
+  color: #5b3c88;
+  transition: all 0.2s ease;
+}
+
+.employee-view-order-btn:hover {
+  background: #e3d5fa;
+  transform: translateY(-1px);
+}
+
+.employee-empty-card {
+  grid-column: 1 / -1;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 1.5rem;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  color: #555;
+}
+
+@media (max-width: 1200px) {
+  .employee-orders-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .employee-orders-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.employee-order-status-select {
+  border: 1px solid #ddd4f0;
+  background: #f7f2ff;
+  color: #5b3c88;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.employee-order-status-select:focus {
+  border-color: #b9a2ea;
+}
