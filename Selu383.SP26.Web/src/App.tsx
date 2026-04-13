@@ -1731,9 +1731,10 @@ function App() {
 
       {isEmployeeDashboardPage && isEmployeeOrAdmin ? (
         <EmployeeDashboard
-          userName={loggedInUserName ?? "Staff"}
-          roles={userRoles}
-        />
+    userName={loggedInUserName ?? "Staff"}
+    roles={userRoles}
+    buildApiUrl={buildApiUrl}
+/>
       ) : null}
 
       <main

@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type EmployeeDashboardProps = {
   userName: string;
   roles: string[];
+  buildApiUrl: (path: string) => string;
 };
 
 type OrderRow = {
@@ -15,50 +16,16 @@ type OrderRow = {
   viewOrder: string;
 };
 
-const demoOrders: OrderRow[] = [
-  {
-    lastName: "Epps",
-    firstName: "Raymond",
-    phone: "985-555-1001",
-    location: "Downtown",
-    pickupMethod: "In Store",
-    orderStatus: "In Progress",
-    viewOrder: "Order #1001",
-  },
-  {
-    lastName: "Domingue",
-    firstName: "Dominick",
-    phone: "985-555-1002",
-    location: "Northside",
-    pickupMethod: "Drive Through",
-    orderStatus: "Client Pending",
-    viewOrder: "Order #1002",
-  },
-  {
-    lastName: "Smith",
-    firstName: "Jordan",
-    phone: "985-555-1003",
-    location: "Downtown",
-    pickupMethod: "In Store",
-    orderStatus: "Complete",
-    viewOrder: "Order #1003",
-  },
-  {
-    lastName: "Johnson",
-    firstName: "Taylor",
-    phone: "985-555-1004",
-    location: "West End",
-    pickupMethod: "Drive Through",
-    orderStatus: "No Thanks",
-    viewOrder: "Order #1004",
-  },
-];
-
 export default function EmployeeDashboard({
   userName,
   roles,
+  buildApiUrl,
 }: EmployeeDashboardProps) {
   const isAdmin = roles.some((role) => role.toLowerCase() === "admin");
+
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const [lastNameFilter, setLastNameFilter] = useState("");
   const [firstNameFilter, setFirstNameFilter] = useState("");
@@ -67,8 +34,66 @@ export default function EmployeeDashboard({
   const [pickupMethodFilter, setPickupMethodFilter] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState("");
 
+useEffect(() => {
+  const loadOrders = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      type ApiOrder = {
+        lastName: string;
+        firstName: string;
+        phone: string;
+        location: string;
+        pickupMethod: string;
+        orderStatus: string;
+        orderNumber: number;
+      };
+
+      const response = await fetch(buildApiUrl("/api/orders"), {
+  credentials: "include",
+});;
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setError("You are not logged in.");
+          return;
+        }
+
+        if (response.status === 403) {
+          setError("You do not have permission to view orders.");
+          return;
+        }
+
+        throw new Error(`Failed to load orders (${response.status})`);
+      }
+
+      const data: ApiOrder[] = await response.json();
+
+      const mappedOrders: OrderRow[] = data.map((order) => ({
+        lastName: order.lastName,
+        firstName: order.firstName,
+        phone: order.phone,
+        location: order.location,
+        pickupMethod: order.pickupMethod,
+        orderStatus: order.orderStatus,
+        viewOrder: `Order #${order.orderNumber}`,
+      }));
+
+      setOrders(mappedOrders);
+    } catch (err) {
+      setError("Could not load orders.");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  loadOrders();
+}, []);
+
   const filteredOrders = useMemo(() => {
-    return demoOrders.filter((order) => {
+    return orders.filter((order) => {
       const matchesLastName = order.lastName
         .toLowerCase()
         .includes(lastNameFilter.toLowerCase());
@@ -100,6 +125,7 @@ export default function EmployeeDashboard({
       );
     });
   }, [
+    orders,
     lastNameFilter,
     firstNameFilter,
     phoneFilter,
@@ -245,6 +271,9 @@ export default function EmployeeDashboard({
           </button>
         </div>
 
+        {loading ? <p>Loading orders...</p> : null}
+        {error ? <p>{error}</p> : null}
+
         <table className="employee-table">
           <thead>
             <tr>
@@ -272,7 +301,7 @@ export default function EmployeeDashboard({
               </tr>
             ))}
 
-            {filteredOrders.length === 0 ? (
+            {!loading && filteredOrders.length === 0 ? (
               <tr>
                 <td colSpan={7} className="employee-empty-row">
                   No orders match those filters.

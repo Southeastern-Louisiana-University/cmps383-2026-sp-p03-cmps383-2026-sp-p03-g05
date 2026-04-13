@@ -14,7 +14,37 @@ namespace Selu383.SP26.Api.Controllers;
 [Authorize]
 public class OrdersController(DataContext dataContext) : ControllerBase
 {
-    [HttpGet("history")]
+    
+    
+    
+    
+    
+    [HttpGet]
+
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<List<object>>> GetOrders()
+    {
+        var result = await dataContext.Set<Order>()
+            .AsNoTracking()
+            .OrderByDescending(x => x.DateOrdered)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new
+            {
+                lastName = x.User != null ? x.User.LastName : string.Empty,
+                firstName = x.User != null ? x.User.FirstName : string.Empty,
+                phone = x.User != null ? x.User.PhoneNumber ?? string.Empty : string.Empty,
+                location = x.Location != null ? x.Location.Address : string.Empty,
+                pickupMethod = x.PickupMethod,
+                orderStatus = x.OrderStatus != null ? x.OrderStatus.Name : string.Empty,
+                orderNumber = x.Id
+            })
+            .ToListAsync();
+
+        return Ok(result);
+    }
+
+
+[HttpGet("history")]
     public async Task<ActionResult<List<OrderHistoryDto>>> History()
     {
         var currentUserId = User.GetCurrentUserId();
