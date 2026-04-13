@@ -155,12 +155,31 @@ export default function EmployeeDashboard({
     setOrderStatusFilter("");
   };
 
-  const handleStatusChange = (orderId: number, newStatus: string) => {
-    setOrderStatuses((previous) => ({
-      ...previous,
-      [orderId]: newStatus,
-    }));
-  };
+const handleStatusChange = async (orderId: number, newStatus: string) => {
+  setOrderStatuses((previous) => ({
+    ...previous,
+    [orderId]: newStatus,
+  }));
+
+  try {
+    const response = await fetch(buildApiUrl(`/api/orders/${orderId}/status`), {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: newStatus }),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Failed to update status (${response.status})`);
+    }
+  } catch (err) {
+    console.error("Failed to update status", err);
+    setError("Could not save order status.");
+  }
+};
 
   const handleToolClick = (toolName: string) => {
     alert(`${toolName} clicked`);

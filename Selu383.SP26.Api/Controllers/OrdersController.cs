@@ -43,6 +43,43 @@ public class OrdersController(DataContext dataContext) : ControllerBase
         return Ok(result);
     }
 
+           [HttpPut("{id}/status")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Status))
+            {
+                return BadRequest("Status is required.");
+            }
+
+            var order = await dataContext.Set<Order>()
+                .FirstOrDefaultAsync(x => x.Id == id);
+
+            if (order == null)
+            {
+                return NotFound();
+            }
+
+            var trimmedStatus = dto.Status.Trim();
+
+            var statusEntity = await dataContext.Set<OrderStatus>()
+                .FirstOrDefaultAsync(x => x.Name == trimmedStatus);
+
+            if (statusEntity == null)
+            {
+                return BadRequest($"Invalid status: {trimmedStatus}");
+            }
+
+            order.OrderStatusId = statusEntity.Id;
+
+            await dataContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                orderId = order.Id,
+                status = trimmedStatus
+            });
+        }
 
 [HttpGet("history")]
     public async Task<ActionResult<List<OrderHistoryDto>>> History()
