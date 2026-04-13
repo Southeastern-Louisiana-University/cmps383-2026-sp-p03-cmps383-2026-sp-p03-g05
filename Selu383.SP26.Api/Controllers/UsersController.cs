@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Selu383.SP26.Api.Features.Auth;
+using Selu383.SP26.Api.Features.Items;
 
 namespace Selu383.SP26.Api.Controllers;
 
@@ -22,6 +23,7 @@ public class UsersController : ControllerBase
     public async Task<ActionResult<IEnumerable<UserDto>>> GetAll()
     {
         var users = await userManager.Users
+            .Include(x => x.FavoriteItems)
             .Select(x => new UserDto
             {
                 Id = x.Id,
@@ -32,7 +34,15 @@ public class UsersController : ControllerBase
                 City = x.City,
                 State = x.State,
                 ZipCode = x.ZipCode,
-                Roles = x.UserRoles.Select(y => y.Role!.Name ?? string.Empty).ToArray()
+                Roles = x.UserRoles.Select(y => y.Role!.Name ?? string.Empty).ToArray(),
+                FavoriteItems = x.FavoriteItems.Select(f => new MenuItemDto
+                {
+                    Id = f.Id,
+                    Name = f.Name,
+                    Description = f.Description,
+                    Price = f.Price,
+                    ImageUrl = f.ImageUrl
+                }).ToArray()
             }).ToListAsync();
 
         return Ok(users);
@@ -42,6 +52,7 @@ public class UsersController : ControllerBase
     public async Task<ActionResult<UserDto>> GetById(int id)
     {
         var user = await userManager.Users
+            .Include(x => x.FavoriteItems)
             .Where(x => x.Id == id)
             .Select(x => new UserDto
             {
@@ -53,7 +64,15 @@ public class UsersController : ControllerBase
                 City = x.City,
                 State = x.State,
                 ZipCode = x.ZipCode,
-                Roles = x.UserRoles.Select(y => y.Role!.Name ?? string.Empty).ToArray()
+                Roles = x.UserRoles.Select(y => y.Role!.Name ?? string.Empty).ToArray(),
+                FavoriteItems = x.FavoriteItems.Select(f => new MenuItemDto
+                {
+                    Id = f.Id,
+                    Name = f.Name,
+                    Description = f.Description,
+                    Price = f.Price,
+                    ImageUrl = f.ImageUrl
+                }).ToArray()
             }).FirstOrDefaultAsync();
 
         if (user == null)
@@ -146,9 +165,14 @@ public class UsersController : ControllerBase
             return BadRequest();
         }
 
+        // Reload user with favorites
+        user = await userManager.Users
+            .Include(x => x.FavoriteItems)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
         return Ok(new UserDto
         {
-            Id = user.Id,
+            Id = user!.Id,
             UserName = user.UserName ?? string.Empty,
             FirstName = user.FirstName,
             LastName = user.LastName,
@@ -156,7 +180,91 @@ public class UsersController : ControllerBase
             City = user.City,
             State = user.State,
             ZipCode = user.ZipCode,
-            Roles = (await userManager.GetRolesAsync(user)).ToArray()
+            Roles = (await userManager.GetRolesAsync(user)).ToArray(),
+            FavoriteItems = user.FavoriteItems.Select(f => new MenuItemDto
+            {
+                Id = f.Id,
+                Name = f.Name,
+                Description = f.Description,
+                Price = f.Price,
+                ImageUrl = f.ImageUrl
+            }).ToArray()
         });
+    }
+
+    [HttpPost("{id}/favorites/{menuItemId}")]
+    [Authorize]
+    public async Task<ActionResult> AddFavorite(int id, int menuItemId)
+    {
+        var user = await userManager.Users
+            .Include(x => x.FavoriteItems)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (user == null)
+        {
+            return NotFound();
+        }
+
+        // Security: Users can only add favorites for themselves, unless they are an Admin
+        var currentUserName = User.Identity?.Name;
+        if (user.UserName != currentUserName && !User.IsInRole(RoleNames.Admin))
+        {
+            return Forbid();
+        }
+
+        // Check if already favorited
+        if (user.FavoriteItems.Any(x => x.Id == menuItemId))
+        {
+            return BadRequest("Item is already in favorites");
+        }
+
+        // Add to favorites (we don't need to fetch the MenuItem, EF will handle the relationship)
+        var menuItem = new MenuItem { Id = menuItemId };
+        user.FavoriteItems.Add(menuItem);
+
+        var result = await userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            return BadRequest();
+        }
+
+        return Ok();
+    }
+
+    [HttpDelete("{id}/favorites/{menuItemId}")]
+    [Authorize]
+    public async Task<ActionResult> RemoveFavorite(int id, int menuItemId)
+    {
+        var user = await userManager.Users
+            .Include(x => x.FavoriteItems)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (user == null)
+        {
+            return NotFound();
+        }
+
+        // Security: Users can only remove favorites for themselves, unless they are an Admin
+        var currentUserName = User.Identity?.Name;
+        if (user.UserName != currentUserName && !User.IsInRole(RoleNames.Admin))
+        {
+            return Forbid();
+        }
+
+        var favorite = user.FavoriteItems.FirstOrDefault(x => x.Id == menuItemId);
+        if (favorite == null)
+        {
+            return NotFound("Item not in favorites");
+        }
+
+        user.FavoriteItems.Remove(favorite);
+
+        var result = await userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            return BadRequest();
+        }
+
+        return Ok();
     }
 }
