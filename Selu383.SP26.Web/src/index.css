@@ -2192,3 +2192,15 @@ a {
 .employee-order-status-select:focus {
   border-color: #b9a2ea;
 }
+
+.employee-top-location-filter {
+  margin-top: 1rem;
+  width: 100%;
+}
+
+.employee-location-helper-text {
+  margin-top: 0.85rem;
+  color: #6b6780;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}

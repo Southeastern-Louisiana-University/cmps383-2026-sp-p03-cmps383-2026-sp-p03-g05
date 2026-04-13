@@ -147,13 +147,12 @@ export default function EmployeeDashboard({
   ]);
 
   const clearFilters = () => {
-    setLastNameFilter("");
-    setFirstNameFilter("");
-    setPhoneFilter("");
-    setLocationFilter("");
-    setPickupMethodFilter("");
-    setOrderStatusFilter("");
-  };
+  setLastNameFilter("");
+  setFirstNameFilter("");
+  setPhoneFilter("");
+  setPickupMethodFilter("");
+  setOrderStatusFilter("");
+};
 
 const handleStatusChange = async (orderId: number, newStatus: string) => {
   setOrderStatuses((previous) => ({
@@ -228,9 +227,22 @@ const handleStatusChange = async (orderId: number, newStatus: string) => {
         </article>
 
         <article className="employee-card">
-          <h2>Needs Attention</h2>
-          <div className="employee-card-number danger">2</div>
-          <p>Orders needing review soon</p>
+          <h2>Location Selector</h2>
+
+          <select
+            className="employee-search employee-top-location-filter"
+            value={locationFilter}
+            onChange={(event) => setLocationFilter(event.target.value)}
+          >
+            <option value="">All locations</option>
+            <option value="123 Main St">123 Main St</option>
+            <option value="456 Oak Ave">456 Oak Ave</option>
+            <option value="789 Pine Ln">789 Pine Ln</option>
+          </select>
+
+          <p className="employee-location-helper-text">
+            Please make sure you are on the right location.
+          </p>
         </article>
 
         <article className="employee-card">
@@ -274,17 +286,6 @@ const handleStatusChange = async (orderId: number, newStatus: string) => {
             value={phoneFilter}
             onChange={(event) => setPhoneFilter(event.target.value)}
           />
-
-          <select
-            className="employee-search"
-            value={locationFilter}
-            onChange={(event) => setLocationFilter(event.target.value)}
-          >
-            <option value="">All locations</option>
-            <option value="123 Main St">123 Main St</option>
-            <option value="456 Oak Ave">456 Oak Ave</option>
-            <option value="789 Pine Ln">789 Pine Ln</option>
-          </select>
 
           <select
             className="employee-search"
