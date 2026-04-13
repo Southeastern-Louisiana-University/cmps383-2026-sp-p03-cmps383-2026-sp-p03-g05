@@ -2010,3 +2010,63 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+.employee-top-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.employee-card {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  min-height: 220px;
+}
+
+.employee-tools-card h2 {
+  margin-bottom: 0.35rem;
+}
+
+.employee-tools-card p {
+  margin-bottom: 1rem;
+}
+
+.employee-tools-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.employee-tool-btn {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #efe7fb;
+  color: #5b3c88;
+  transition: 0.2s ease;
+}
+
+.employee-tool-btn:hover {
+  background: #e3d5fa;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 1200px) {
+  .employee-top-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .employee-top-grid {
+    grid-template-columns: 1fr;
+  }
+}

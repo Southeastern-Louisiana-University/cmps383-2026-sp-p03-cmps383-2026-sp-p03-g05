@@ -117,14 +117,44 @@ export default function EmployeeDashboard({
     setOrderStatusFilter("");
   };
 
+  const handleToolClick = (toolName: string) => {
+    alert(`${toolName} clicked`);
+  };
+
   return (
     <main className="employee-dashboard">
-      <section className="employee-hero">
-        <h1>{userName}&apos;s Dashboard</h1>
-        <p>{isAdmin ? "Administrator Access" : "Employee Access"}</p>
-      </section>
+      <section className="employee-top-grid">
+        <article className="employee-card employee-tools-card">
+          <h2>{userName}&apos;s Dashboard</h2>
+          <p>{isAdmin ? "Administrator Access" : "Employee Access"}</p>
 
-      <section className="employee-cards">
+          <div className="employee-tools-grid">
+            <button
+              type="button"
+              className="employee-tool-btn"
+              onClick={() => handleToolClick("Edit Menu")}
+            >
+              Edit Menu
+            </button>
+
+            <button
+              type="button"
+              className="employee-tool-btn"
+              onClick={() => handleToolClick("Refund Orders")}
+            >
+              Refund Orders
+            </button>
+
+            <button
+              type="button"
+              className="employee-tool-btn"
+              onClick={() => handleToolClick("Sales Report")}
+            >
+              Sales Report
+            </button>
+          </div>
+        </article>
+
         <article className="employee-card">
           <h2>Needs Attention</h2>
           <div className="employee-card-number danger">2</div>
@@ -224,7 +254,7 @@ export default function EmployeeDashboard({
               <th>Location</th>
               <th>Pick Up Method</th>
               <th>Order Status</th>
-              <th>View Order</th>
+              <th>Order Number</th>
             </tr>
           </thead>
           <tbody>
