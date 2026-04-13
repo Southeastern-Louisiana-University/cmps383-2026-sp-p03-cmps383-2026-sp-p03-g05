@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type EmployeeDashboardProps = {
   userName: string;
@@ -36,10 +36,13 @@ export default function EmployeeDashboard({
   const [pickupMethodFilter, setPickupMethodFilter] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState("");
 
-  useEffect(() => {
-    const loadOrders = async () => {
+  const loadOrders = useCallback(
+    async (showLoader = false) => {
       try {
-        setLoading(true);
+        if (showLoader) {
+          setLoading(true);
+        }
+
         setError("");
 
         type ApiOrder = {
@@ -83,23 +86,36 @@ export default function EmployeeDashboard({
           viewOrder: `Order #${order.orderNumber}`,
         }));
 
-        const initialStatuses: Record<number, string> = {};
-        mappedOrders.forEach((order) => {
-          initialStatuses[order.id] = order.orderStatus;
-        });
-
         setOrders(mappedOrders);
-        setOrderStatuses(initialStatuses);
+
+        setOrderStatuses((previous) => {
+          const next: Record<number, string> = {};
+          mappedOrders.forEach((order) => {
+            next[order.id] = previous[order.id] ?? order.orderStatus;
+          });
+          return next;
+        });
       } catch (err) {
         setError("Could not load orders.");
         console.error(err);
       } finally {
-        setLoading(false);
+        if (showLoader) {
+          setLoading(false);
+        }
       }
-    };
+    },
+    [buildApiUrl],
+  );
 
-    loadOrders();
-  }, [buildApiUrl]);
+  useEffect(() => {
+    loadOrders(true);
+
+    const intervalId = window.setInterval(() => {
+      loadOrders(false);
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadOrders]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -147,38 +163,40 @@ export default function EmployeeDashboard({
   ]);
 
   const clearFilters = () => {
-  setLastNameFilter("");
-  setFirstNameFilter("");
-  setPhoneFilter("");
-  setPickupMethodFilter("");
-  setOrderStatusFilter("");
-};
+    setLastNameFilter("");
+    setFirstNameFilter("");
+    setPhoneFilter("");
+    setPickupMethodFilter("");
+    setOrderStatusFilter("");
+  };
 
-const handleStatusChange = async (orderId: number, newStatus: string) => {
-  setOrderStatuses((previous) => ({
-    ...previous,
-    [orderId]: newStatus,
-  }));
+  const handleStatusChange = async (orderId: number, newStatus: string) => {
+    setOrderStatuses((previous) => ({
+      ...previous,
+      [orderId]: newStatus,
+    }));
 
-  try {
-    const response = await fetch(buildApiUrl(`/api/orders/${orderId}/status`), {
-      method: "PUT",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ status: newStatus }),
-    });
+    try {
+      const response = await fetch(buildApiUrl(`/api/orders/${orderId}/status`), {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
 
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(message || `Failed to update status (${response.status})`);
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Failed to update status (${response.status})`);
+      }
+
+      await loadOrders(false);
+    } catch (err) {
+      console.error("Failed to update status", err);
+      setError("Could not save order status.");
     }
-  } catch (err) {
-    console.error("Failed to update status", err);
-    setError("Could not save order status.");
-  }
-};
+  };
 
   const handleToolClick = (toolName: string) => {
     alert(`${toolName} clicked`);
@@ -317,6 +335,10 @@ const handleStatusChange = async (orderId: number, newStatus: string) => {
             Clear Filters
           </button>
         </div>
+
+        <p style={{ fontSize: "0.85rem", color: "#888", marginTop: "8px" }}>
+          Auto-refreshing every 5 seconds...
+        </p>
 
         {loading ? <p>Loading orders...</p> : null}
         {error ? <p>{error}</p> : null}
