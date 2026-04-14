@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   Check,
+  CheckCircle2,
   ChevronsLeft,
   ChevronsRight,
   CircleUserRound,
@@ -48,7 +49,10 @@ import visapayImg from "./assets/visapay.png";
 import applepayImg from "./assets/applepay.png";
 import gpayImg from "./assets/gpay.png";
 import CustomerPage from "./customerpage";
+import EmployeeDashboard from "./EmployeeDashboard";
 import ReservationsModal, { type ReservationLoginPayload } from "./reservations";
+import MenuEditor from "./MenuEditor";
+import ReportsPage from "./ReportsPage";
 
 const menuItemImages: Record<string, string> = {
   "Iced Latte": icedLateImg,
@@ -366,6 +370,30 @@ type CartSummaryItem = {
   quantity: number;
 };
 
+type GuestOrderReplayItem = {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+type GuestOrderReplayDraft = {
+  locationId: number;
+  pickupType: "In Store" | "Drive Through";
+  paymentMethod: string;
+  total: number;
+  items: GuestOrderReplayItem[];
+};
+
+type CustomerOrderAgainItem = {
+  name: string;
+  quantity: number;
+};
+
+type CustomerOrderAgainPayload = {
+  id: number;
+  items: CustomerOrderAgainItem[];
+};
+
 type PolicyType = "terms" | "privacy" | null;
 
 const defaultApiBaseUrl = "";
@@ -400,6 +428,7 @@ const formatPhoneNumber = (value: string) => {
   return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6)}`;
 };
 
+const menuEditorPath = "/menu-editor";
 const calculateRewardPoints = (orderTotal: number) =>
   Math.max(0, Math.round(orderTotal * 10));
 const rewardsCounterDurationMs = 1200;
@@ -409,6 +438,8 @@ const buildApiUrl = (path: string) =>
   `${apiBaseUrl.replace(/\/$/, "")}${path}`;
 
 const customerPagePath = "/customerpage";
+const employeeDashboardPath = "/dashboard";
+const reportsPath = "/reports";
 const legacyReservationsPath = "/reservations";
 
 const normalizePath = (path: string) => {
@@ -471,6 +502,7 @@ function App() {
   const [loggedInUserName, setLoggedInUserName] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [pridePoints, setPridePoints] = useState(0);
+  const [userRoles, setUserRoles] = useState<string[]>([]);
   const [isSessionResolved, setIsSessionResolved] = useState(false);
   const [currentPath, setCurrentPath] = useState(() =>
     normalizePath(window.location.pathname),
@@ -508,6 +540,9 @@ function App() {
     useState(false);
   const [rewardPointsEarned, setRewardPointsEarned] = useState(0);
   const [rewardCounter, setRewardCounter] = useState(0);
+  const [pendingGuestRewardPoints, setPendingGuestRewardPoints] = useState(0);
+  const [pendingGuestOrderDraft, setPendingGuestOrderDraft] =
+    useState<GuestOrderReplayDraft | null>(null);
   const [featuredMenuItems, setFeaturedMenuItems] = useState<MenuItem[]>(
     featuredDrinks,
   );
@@ -525,19 +560,51 @@ function App() {
   const rewardsCounterTimer = useRef<number | null>(null);
   const authControlRef = useRef<HTMLDivElement | null>(null);
   const navAreaRef = useRef<HTMLDivElement | null>(null);
+
+  const isMenuEditorPage = currentPath === menuEditorPath;
   const isCustomerPage = currentPath === customerPagePath;
+  const isEmployeeDashboardPage = currentPath === employeeDashboardPath;
+  const isReportsPage = currentPath === reportsPath;
+  const isEmployeeOrAdmin =
+    userRoles.some((role) => role.toLowerCase() === "employee") ||
+    userRoles.some((role) => role.toLowerCase() === "admin");
+
   const displayMenuItems = [
     ...drinkMenuItems,
     ...sweetCrepeMenuItems,
     ...savoryCrepeMenuItems,
     ...bagelMenuItems,
   ];
+  const featuredMenuItemNameKeys = new Set(
+    featuredMenuItems.map((item) =>
+      normalizeMenuItemName(item.name).toLowerCase(),
+    ),
+  );
+  const filterOutFeaturedItems = (items: MenuItem[]) =>
+    items.filter(
+      (item) =>
+        !featuredMenuItemNameKeys.has(
+          normalizeMenuItemName(item.name).toLowerCase(),
+        ),
+    );
+  const visibleDrinkMenuItems = filterOutFeaturedItems(drinkMenuItems);
+  const visibleSweetCrepeMenuItems = filterOutFeaturedItems(sweetCrepeMenuItems);
+  const visibleSavoryCrepeMenuItems = filterOutFeaturedItems(savoryCrepeMenuItems);
+  const visibleBagelMenuItems = filterOutFeaturedItems(bagelMenuItems);
+
   const displayMenuItemByName = new Map(
     displayMenuItems.map((item) => [
       item.name,
       { ...item, unitPrice: parsePrice(item.price) },
     ]),
   );
+  const displayMenuItemNameLookup = new Map(
+    displayMenuItems.map((item) => [
+      normalizeMenuItemName(item.name).toLowerCase(),
+      item.name,
+    ]),
+  );
+
   const cartSummaryItems: CartSummaryItem[] = Object.entries(cartItemsByName)
     .map(([name, quantity]) => {
       const catalogItem = displayMenuItemByName.get(name);
@@ -554,6 +621,7 @@ function App() {
       };
     })
     .filter((item): item is CartSummaryItem => item !== null);
+
   const cartCount = cartSummaryItems.reduce(
     (sum, item) => sum + item.quantity,
     0,
@@ -565,10 +633,12 @@ function App() {
 
   const carouselMenuItems = displayMenuItems.length > 0 ? displayMenuItems : drinks;
   const currentCarouselItem = carouselMenuItems[carouselIndex];
+
   const goToPreviousCarouselItem = () =>
     setCarouselIndex((previous) =>
       previous === 0 ? carouselMenuItems.length - 1 : previous - 1,
     );
+
   const goToNextCarouselItem = () =>
     setCarouselIndex((previous) => (previous + 1) % carouselMenuItems.length);
 
@@ -576,6 +646,7 @@ function App() {
     carouselMenuItems[
       (carouselIndex - 1 + carouselMenuItems.length) % carouselMenuItems.length
     ];
+
   const nextCarouselItem =
     carouselMenuItems[(carouselIndex + 1) % carouselMenuItems.length];
 
@@ -675,6 +746,7 @@ function App() {
   const navigateToPath = (path: string) => {
     const normalizedPath = normalizePath(path);
     const currentLocationPath = normalizePath(window.location.pathname);
+
     if (currentLocationPath !== normalizedPath) {
       window.history.pushState({}, "", normalizedPath);
     }
@@ -686,6 +758,7 @@ function App() {
 
   const handleUserIconClick = () => {
     setIsMobileNavOpen(false);
+
     if (loggedInUserName) {
       setIsAuthPopupOpen(false);
       setIsUserMenuOpen((previous) => !previous);
@@ -698,6 +771,12 @@ function App() {
   const handleAccountClick = () => {
     setIsUserMenuOpen(false);
     setIsReservationsModalOpen(false);
+
+    if (isEmployeeOrAdmin) {
+      navigateToPath(employeeDashboardPath);
+      return;
+    }
+
     navigateToPath(customerPagePath);
   };
 
@@ -730,6 +809,7 @@ function App() {
       setLoggedInUserName(null);
       setCurrentUserId(null);
       setPridePoints(0);
+      setUserRoles([]);
       setLoginPassword("");
       setIsReservationsModalOpen(false);
       setIsSessionResolved(true);
@@ -743,6 +823,7 @@ function App() {
     };
 
     window.addEventListener("popstate", handlePopState);
+
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
@@ -762,12 +843,14 @@ function App() {
             setLoggedInUserName(null);
             setCurrentUserId(null);
             setPridePoints(0);
+            setUserRoles([]);
             setIsSessionResolved(true);
           }
           return;
         }
 
         const user = (await response.json()) as AuthenticationUserDto;
+
         if (!isMounted) {
           return;
         }
@@ -775,6 +858,7 @@ function App() {
         setLoggedInUserName(user.userName);
         setCurrentUserId(user.id);
         setPridePoints(user.pridePoints ?? 0);
+        setUserRoles(user.roles ?? []);
         setIsSessionResolved(true);
       } catch {
         if (!isMounted) {
@@ -784,6 +868,7 @@ function App() {
         setLoggedInUserName(null);
         setCurrentUserId(null);
         setPridePoints(0);
+        setUserRoles([]);
         setIsSessionResolved(true);
       }
     };
@@ -813,6 +898,7 @@ function App() {
         }
 
         const user = (await response.json()) as AuthenticationUserDto;
+
         if (!isMounted) {
           return;
         }
@@ -858,6 +944,7 @@ function App() {
 
     const handleOutsidePointerDown = (event: PointerEvent) => {
       const target = event.target;
+
       if (!(target instanceof Node)) {
         return;
       }
@@ -871,6 +958,7 @@ function App() {
     };
 
     document.addEventListener("pointerdown", handleOutsidePointerDown);
+
     return () => {
       document.removeEventListener("pointerdown", handleOutsidePointerDown);
     };
@@ -883,6 +971,7 @@ function App() {
 
     const handleOutsidePointerDown = (event: PointerEvent) => {
       const target = event.target;
+
       if (!(target instanceof Node)) {
         return;
       }
@@ -895,6 +984,7 @@ function App() {
     };
 
     document.addEventListener("pointerdown", handleOutsidePointerDown);
+
     return () => {
       document.removeEventListener("pointerdown", handleOutsidePointerDown);
     };
@@ -908,6 +998,7 @@ function App() {
     };
 
     window.addEventListener("resize", handleResize);
+
     return () => {
       window.removeEventListener("resize", handleResize);
     };
@@ -927,12 +1018,14 @@ function App() {
         }
 
         const apiMenuItems = (await response.json()) as ApiMenuItemDto[];
+
         if (!isMounted || apiMenuItems.length === 0) {
           return;
         }
 
         const mappedItems = apiMenuItems.map((item) => {
           const normalizedName = normalizeMenuItemName(item.itemName);
+
           return {
             type: item.type,
             featured: item.featured,
@@ -956,12 +1049,15 @@ function App() {
         const nextSweetCrepeItems = foodItems.filter((item) =>
           sweetCrepeItemNames.has(item.name),
         );
+
         const nextSavoryCrepeItems = foodItems.filter((item) =>
           savoryCrepeItemNames.has(item.name),
         );
+
         const nextBagelItems = foodItems.filter((item) =>
           bagelItemNames.has(item.name),
         );
+
         const nextOtherFoodItems = foodItems.filter(
           (item) =>
             !sweetCrepeItemNames.has(item.name) &&
@@ -1019,6 +1115,7 @@ function App() {
   const toggleCartItem = (itemName: string) => {
     setCartItemsByName((previous) => {
       const currentQuantity = previous[itemName] ?? 0;
+
       if (currentQuantity > 0) {
         const { [itemName]: _, ...rest } = previous;
         return rest;
@@ -1041,6 +1138,7 @@ function App() {
   const decrementCartItem = (itemName: string) => {
     setCartItemsByName((previous) => {
       const currentQuantity = previous[itemName] ?? 0;
+
       if (currentQuantity <= 1) {
         const { [itemName]: _, ...rest } = previous;
         return rest;
@@ -1058,6 +1156,7 @@ function App() {
       if (!(itemName in previous)) {
         return previous;
       }
+
       const { [itemName]: _, ...rest } = previous;
       return rest;
     });
@@ -1072,16 +1171,20 @@ function App() {
       window.clearTimeout(closeCheckoutTimer.current);
       closeCheckoutTimer.current = null;
     }
+
     if (rewardsCounterTimer.current !== null) {
       window.clearInterval(rewardsCounterTimer.current);
       rewardsCounterTimer.current = null;
     }
+
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(false);
     setOrderErrorMessage(null);
     setOrderSuccessMessageVisible(false);
     setRewardPointsEarned(0);
     setRewardCounter(0);
+    setPendingGuestRewardPoints(0);
+    setPendingGuestOrderDraft(null);
   };
 
   const handleKeepShopping = () => {
@@ -1104,6 +1207,7 @@ function App() {
 
       const locationResults = (await response.json()) as LocationDto[];
       setLocations(locationResults);
+
       setSelectedLocationId((current) => {
         if (
           current !== "" &&
@@ -1128,9 +1232,58 @@ function App() {
     setOrderSuccessMessageVisible(false);
     setRewardPointsEarned(0);
     setRewardCounter(0);
+    setPendingGuestRewardPoints(0);
+    setPendingGuestOrderDraft(null);
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(true);
     void fetchLocations();
+  };
+
+  const openCheckoutSignInPrompt = () => {
+    setIsCheckoutModalOpen(false);
+    setLoginErrorMessage(null);
+    setIsUserMenuOpen(false);
+    setIsAuthPopupOpen(true);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
+  const openCheckoutSignUpPrompt = () => {
+    setIsCheckoutModalOpen(false);
+    openSignUpModal();
+  };
+
+  const handleOrderAgainFromCustomerPage = (order: CustomerOrderAgainPayload) => {
+    const orderAgainItemsByName: Record<string, number> = {};
+
+    order.items.forEach((item) => {
+      const normalizedName = normalizeMenuItemName(item.name).toLowerCase();
+      const catalogName = displayMenuItemNameLookup.get(normalizedName);
+      const quantity = Math.max(0, Math.floor(item.quantity));
+
+      if (!catalogName || quantity < 1) {
+        return;
+      }
+
+      orderAgainItemsByName[catalogName] =
+        (orderAgainItemsByName[catalogName] ?? 0) + quantity;
+    });
+
+    if (Object.keys(orderAgainItemsByName).length === 0) {
+      alert("No valid items were found for that previous order.");
+      return;
+    }
+
+    setCartItemsByName((previous) => {
+      const nextCartItemsByName = { ...previous };
+
+      Object.entries(orderAgainItemsByName).forEach(([name, quantity]) => {
+        nextCartItemsByName[name] = (nextCartItemsByName[name] ?? 0) + quantity;
+      });
+
+      return nextCartItemsByName;
+    });
+
+    openCheckoutModal();
   };
 
   const startRewardsCounterAnimation = (pointsToAdd: number) => {
@@ -1156,6 +1309,7 @@ function App() {
 
       if (progress >= 1) {
         setRewardCounter(pointsToAdd);
+
         if (rewardsCounterTimer.current !== null) {
           window.clearInterval(rewardsCounterTimer.current);
           rewardsCounterTimer.current = null;
@@ -1164,27 +1318,32 @@ function App() {
     }, 30);
   };
 
-  const applyRewardsFromOrder = async (pointsToAdd: number) => {
-    if (pointsToAdd <= 0 || currentUserId === null) {
+  const applyRewardsFromOrder = async (
+    pointsToAdd: number,
+    targetUserId: number | null = currentUserId,
+  ) => {
+    if (pointsToAdd <= 0 || targetUserId === null) {
       return;
     }
 
     try {
-      // Fetch current points first, then update with increment API.
-      await fetch(buildApiUrl(`/api/users/${currentUserId}`), {
+      await fetch(buildApiUrl(`/api/users/${targetUserId}`), {
         credentials: "include",
       });
 
-      const response = await fetch(buildApiUrl(`/api/users/${currentUserId}/rewards`), {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        buildApiUrl(`/api/users/${targetUserId}/rewards`),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            pointsToAdd,
+          }),
         },
-        body: JSON.stringify({
-          pointsToAdd,
-        }),
-      });
+      );
 
       if (!response.ok) {
         return;
@@ -1214,32 +1373,40 @@ function App() {
 
     setIsSubmittingOrder(true);
     setOrderErrorMessage(null);
+    setPendingGuestRewardPoints(0);
+    setPendingGuestOrderDraft(null);
 
     try {
+      const isGuestCheckout = !loggedInUserName;
       const selectedPaymentOption = paymentMethodOptions.find(
         (option) => option.value === paymentMethod,
       );
+      const orderPayload: GuestOrderReplayDraft = {
+        locationId: Number(selectedLocationId),
+        pickupType,
+        paymentMethod: selectedPaymentOption?.label ?? paymentMethod,
+        total: Number(cartSubtotal.toFixed(2)),
+        items: cartSummaryItems.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice.toFixed(2)),
+        })),
+      };
+
+      let requiresAuthReplay = false;
+
       const response = await fetch(buildApiUrl("/api/orders"), {
         method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          locationId: selectedLocationId,
-          pickupType,
-          paymentMethod: selectedPaymentOption?.label ?? paymentMethod,
-          total: Number(cartSubtotal.toFixed(2)),
-          items: cartSummaryItems.map((item) => ({
-            name: item.name,
-            quantity: item.quantity,
-            unitPrice: Number(item.unitPrice.toFixed(2)),
-          })),
-        }),
+        body: JSON.stringify(orderPayload),
       });
 
       if (!response.ok) {
         let message = `Order failed (${response.status})`;
+
         try {
           const responseText = await response.text();
           if (responseText) {
@@ -1248,21 +1415,47 @@ function App() {
         } catch {
           // Keep fallback message when response parsing fails.
         }
-        throw new Error(message);
+
+        const isUnauthorizedResponse =
+          response.status === 401 ||
+          response.status === 403 ||
+          /unauthorized/i.test(message);
+
+        if (!(isGuestCheckout && isUnauthorizedResponse)) {
+          throw new Error(message);
+        }
+
+        requiresAuthReplay = true;
       }
 
       const pointsToAdd = calculateRewardPoints(cartSubtotal);
-      await applyRewardsFromOrder(pointsToAdd);
+      if (isGuestCheckout) {
+        if (requiresAuthReplay) {
+          setPendingGuestRewardPoints(pointsToAdd);
+          setPendingGuestOrderDraft(orderPayload);
+        } else {
+          setPendingGuestRewardPoints(0);
+          setPendingGuestOrderDraft(null);
+        }
+      } else {
+        await applyRewardsFromOrder(pointsToAdd);
+      }
       startRewardsCounterAnimation(pointsToAdd);
       setOrderSuccessMessageVisible(true);
-      if (closeCheckoutTimer.current !== null) {
-        window.clearTimeout(closeCheckoutTimer.current);
-      }
-      closeCheckoutTimer.current = window.setTimeout(() => {
+
+      if (isGuestCheckout) {
         clearCart();
-        closeCartAndCheckout();
-        closeCheckoutTimer.current = null;
-      }, rewardsCounterDurationMs + rewardsPopupHoldMs);
+      } else {
+        if (closeCheckoutTimer.current !== null) {
+          window.clearTimeout(closeCheckoutTimer.current);
+        }
+
+        closeCheckoutTimer.current = window.setTimeout(() => {
+          clearCart();
+          closeCartAndCheckout();
+          closeCheckoutTimer.current = null;
+        }, rewardsCounterDurationMs + rewardsPopupHoldMs);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Order failed";
       setOrderErrorMessage(message);
@@ -1276,6 +1469,7 @@ function App() {
       if (closeCheckoutTimer.current !== null) {
         window.clearTimeout(closeCheckoutTimer.current);
       }
+
       if (rewardsCounterTimer.current !== null) {
         window.clearInterval(rewardsCounterTimer.current);
       }
@@ -1298,6 +1492,7 @@ function App() {
 
     if (!response.ok) {
       let message = `Login failed (${response.status})`;
+
       try {
         const responseText = await response.text();
         if (responseText) {
@@ -1311,13 +1506,57 @@ function App() {
     }
 
     const user = (await response.json()) as AuthenticationUserDto;
+    const nextRoles = user.roles ?? [];
+    const pendingGuestPoints = pendingGuestRewardPoints;
+    const pendingGuestOrder = pendingGuestOrderDraft;
+
     setLoggedInUserName(user.userName);
     setCurrentUserId(user.id);
     setPridePoints(user.pridePoints ?? 0);
+    setUserRoles(nextRoles);
     setIsSessionResolved(true);
     setLoginPassword("");
     setIsAuthPopupOpen(false);
     setIsUserMenuOpen(false);
+
+    const isStaffUser = nextRoles.some(
+      (role) =>
+        role.toLowerCase() === "employee" || role.toLowerCase() === "admin",
+    );
+
+    if (pendingGuestOrder || pendingGuestPoints > 0) {
+      if (pendingGuestOrder) {
+        try {
+          await fetch(buildApiUrl("/api/orders"), {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(pendingGuestOrder),
+          });
+        } catch {
+          // Keep auth flow resilient even when replay order fails.
+        }
+      }
+
+      if (pendingGuestPoints > 0) {
+        await applyRewardsFromOrder(pendingGuestPoints, user.id);
+      }
+
+      setPendingGuestRewardPoints(0);
+      setPendingGuestOrderDraft(null);
+      closeCartAndCheckout();
+      navigateToPath(customerPagePath);
+      return user;
+    }
+
+    if (isStaffUser) {
+      navigateToPath(employeeDashboardPath);
+    } else {
+      navigateToPath(customerPagePath);
+    }
+
     return user;
   };
 
@@ -1327,6 +1566,7 @@ function App() {
 
   const handleLoginSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     if (isSubmittingLogin) {
       return;
     }
@@ -1346,6 +1586,7 @@ function App() {
 
   const handleSignUpSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     if (isSubmittingSignUp) {
       return;
     }
@@ -1394,6 +1635,7 @@ function App() {
     try {
       const [firstName, ...lastNameParts] = trimmedName.split(/\s+/);
       const lastName = lastNameParts.join(" ").trim() || "Customer";
+
       const payload: CreateUserDto = {
         userName: trimmedUserName,
         password: trimmedPassword,
@@ -1419,6 +1661,7 @@ function App() {
 
       if (!response.ok) {
         let message = `Sign up failed (${response.status})`;
+
         try {
           const responseText = await response.text();
           if (responseText) {
@@ -1427,6 +1670,7 @@ function App() {
         } catch {
           // Keep fallback message when response parsing fails.
         }
+
         throw new Error(message);
       }
 
@@ -1547,6 +1791,7 @@ function App() {
               >
                 <CircleUserRound size={24} />
               </button>
+
               {loggedInUserName ? (
                 <span className="auth-user-name">{loggedInUserName}</span>
               ) : null}
@@ -1591,6 +1836,7 @@ function App() {
                       required
                     />
                   </label>
+
                   <label className="auth-field">
                     <span>Password</span>
                     <input
@@ -1601,6 +1847,7 @@ function App() {
                       required
                     />
                   </label>
+
                   <div className="auth-actions-row">
                     <button
                       type="submit"
@@ -1618,6 +1865,7 @@ function App() {
                       Sign Up
                     </button>
                   </div>
+
                   {loginErrorMessage ? (
                     <p className="auth-error">{loginErrorMessage}</p>
                   ) : null}
@@ -1645,6 +1893,7 @@ function App() {
           featuredItems={featuredMenuItems}
           isInCart={isInCart}
           onToggleCartItem={toggleCartItem}
+          onOrderAgain={handleOrderAgainFromCustomerPage}
           buildApiUrl={buildApiUrl}
           resolveMenuItemImage={(itemName) =>
             menuItemImages[normalizeMenuItemName(itemName)] ?? logo
@@ -1652,9 +1901,35 @@ function App() {
         />
       ) : null}
 
+      {isEmployeeDashboardPage && isEmployeeOrAdmin ? (
+        <EmployeeDashboard
+          roles={userRoles}
+          buildApiUrl={buildApiUrl}
+          onOpenMenuEditor={() => navigateToPath(menuEditorPath)}
+          onOpenReports={() => navigateToPath(reportsPath)}
+        />
+      ) : null}
+
+      {isMenuEditorPage && isEmployeeOrAdmin ? (
+        <MenuEditor
+          buildApiUrl={buildApiUrl}
+          onBack={() => navigateToPath(employeeDashboardPath)}
+        />
+      ) : null}
+
+      {isReportsPage && isEmployeeOrAdmin ? (
+        <ReportsPage onBack={() => navigateToPath(employeeDashboardPath)} />
+      ) : null}
+
       <main
         style={{
-          display: isCustomerPage ? "none" : undefined,
+          display:
+        isCustomerPage ||
+        (isEmployeeDashboardPage && isEmployeeOrAdmin) ||
+        (isMenuEditorPage && isEmployeeOrAdmin) ||
+        (isReportsPage && isEmployeeOrAdmin)
+          ? "none"
+          : undefined,
         }}
       >
         <section className="hero">
@@ -1696,6 +1971,7 @@ function App() {
                   />
                   <p className="hero-slide-label">{previousCarouselItem.name}</p>
                 </div>
+
                 <div className="hero-slide hero-slide-current">
                   <img
                     src={currentCarouselItem.image}
@@ -1704,11 +1980,13 @@ function App() {
                   />
                   <p className="hero-slide-label">{currentCarouselItem.name}</p>
                 </div>
+
                 <div className="hero-slide hero-slide-side" aria-hidden="true">
                   <img src={nextCarouselItem.image} alt="" className="hero-slide-image" />
                   <p className="hero-slide-label">{nextCarouselItem.name}</p>
                 </div>
               </div>
+
               <div className="hero-carousel-controls">
                 <button
                   type="button"
@@ -1783,73 +2061,81 @@ function App() {
           </div>
         </section>
 
-        <section className="menu-section" id="drinks">
-          <div className="section-heading">
-            <p className="section-label">Drinks</p>
-            <h2>Handcrafted favorites</h2>
-          </div>
-          <div className="menu-grid">
-            {drinkMenuItems.map((item) => (
-              <MenuCard
-                key={item.name}
-                item={item}
-                isSelected={isInCart(item.name)}
-                onToggle={toggleCartItem}
-              />
-            ))}
-          </div>
-        </section>
+        {visibleDrinkMenuItems.length > 0 ? (
+          <section className="menu-section" id="drinks">
+            <div className="section-heading">
+              <p className="section-label">Drinks</p>
+              <h2>Handcrafted favorites</h2>
+            </div>
+            <div className="menu-grid">
+              {visibleDrinkMenuItems.map((item) => (
+                <MenuCard
+                  key={item.name}
+                  item={item}
+                  isSelected={isInCart(item.name)}
+                  onToggle={toggleCartItem}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        <section className="menu-section" id="food">
-          <div className="section-heading">
-            <p className="section-label">Sweet Crepes</p>
-            <h2>Sweet, warm, and indulgent</h2>
-          </div>
-          <div className="menu-grid">
-            {sweetCrepeMenuItems.map((item) => (
-              <MenuCard
-                key={item.name}
-                item={item}
-                isSelected={isInCart(item.name)}
-                onToggle={toggleCartItem}
-              />
-            ))}
-          </div>
-        </section>
+        {visibleSweetCrepeMenuItems.length > 0 ? (
+          <section className="menu-section" id="food">
+            <div className="section-heading">
+              <p className="section-label">Sweet Crepes</p>
+              <h2>Sweet, warm, and indulgent</h2>
+            </div>
+            <div className="menu-grid">
+              {visibleSweetCrepeMenuItems.map((item) => (
+                <MenuCard
+                  key={item.name}
+                  item={item}
+                  isSelected={isInCart(item.name)}
+                  onToggle={toggleCartItem}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        <section className="menu-section">
-          <div className="section-heading">
-            <p className="section-label">Savory Crepes</p>
-            <h2>Fresh and filling choices</h2>
-          </div>
-          <div className="menu-grid">
-            {savoryCrepeMenuItems.map((item) => (
-              <MenuCard
-                key={item.name}
-                item={item}
-                isSelected={isInCart(item.name)}
-                onToggle={toggleCartItem}
-              />
-            ))}
-          </div>
-        </section>
+        {visibleSavoryCrepeMenuItems.length > 0 ? (
+          <section className="menu-section">
+            <div className="section-heading">
+              <p className="section-label">Savory Crepes</p>
+              <h2>Fresh and filling choices</h2>
+            </div>
+            <div className="menu-grid">
+              {visibleSavoryCrepeMenuItems.map((item) => (
+                <MenuCard
+                  key={item.name}
+                  item={item}
+                  isSelected={isInCart(item.name)}
+                  onToggle={toggleCartItem}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        <section className="menu-section">
-          <div className="section-heading">
-            <p className="section-label">Bagels</p>
-            <h2>Toasted classics and specialties</h2>
-          </div>
-          <div className="menu-grid">
-            {bagelMenuItems.map((item) => (
-              <MenuCard
-                key={item.name}
-                item={item}
-                isSelected={isInCart(item.name)}
-                onToggle={toggleCartItem}
-              />
-            ))}
-          </div>
-        </section>
+        {visibleBagelMenuItems.length > 0 ? (
+          <section className="menu-section">
+            <div className="section-heading">
+              <p className="section-label">Bagels</p>
+              <h2>Toasted classics and specialties</h2>
+            </div>
+            <div className="menu-grid">
+              {visibleBagelMenuItems.map((item) => (
+                <MenuCard
+                  key={item.name}
+                  item={item}
+                  isSelected={isInCart(item.name)}
+                  onToggle={toggleCartItem}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="about" id="about">
           <div className="about-box">
@@ -1908,6 +2194,7 @@ function App() {
                     disabled={isSubmittingSignUp}
                   />
                 </label>
+
                 <label className="signup-field">
                   <span>Phone Number</span>
                   <input
@@ -1946,6 +2233,7 @@ function App() {
                     disabled={isSubmittingSignUp}
                   />
                 </label>
+
                 <label className="signup-field">
                   <span>Password</span>
                   <input
@@ -1982,6 +2270,7 @@ function App() {
                     disabled={isSubmittingSignUp}
                   />
                 </label>
+
                 <label className="signup-field">
                   <span>State</span>
                   <input
@@ -1993,6 +2282,7 @@ function App() {
                     disabled={isSubmittingSignUp}
                   />
                 </label>
+
                 <label className="signup-field">
                   <span>Zip</span>
                   <input
@@ -2221,7 +2511,15 @@ function App() {
 
             {orderSuccessMessageVisible ? (
               <div className="checkout-success">
-                <h3>Contrats! you earned rewards points!</h3>
+                <CheckCircle2
+                  size={68}
+                  strokeWidth={2.25}
+                  className="checkout-success-icon"
+                />
+                <h3>Order placed successfully</h3>
+                <p className="checkout-success-copy">
+                  Congrats! You earned reward points.
+                </p>
                 <div
                   className="rewards-wheel"
                   style={{
@@ -2233,6 +2531,31 @@ function App() {
                   </div>
                 </div>
                 <p className="rewards-earned">+{rewardPointsEarned} points</p>
+                {!loggedInUserName && pendingGuestRewardPoints > 0 ? (
+                  <div className="checkout-auth-gate checkout-claim-gate">
+                    <h3>Sign in or sign up to claim your points</h3>
+                    <p>
+                      Complete sign in or create an account and we will apply{" "}
+                      {pendingGuestRewardPoints} points to your profile.
+                    </p>
+                    <div className="checkout-auth-actions">
+                      <button
+                        type="button"
+                        className="primary-btn checkout-auth-btn"
+                        onClick={openCheckoutSignInPrompt}
+                      >
+                        Sign In
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn checkout-auth-btn"
+                        onClick={openCheckoutSignUpPrompt}
+                      >
+                        Sign Up
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>
@@ -2270,6 +2593,7 @@ function App() {
                       : null}
                   </select>
                 </label>
+
                 {locationsErrorMessage ? (
                   <p className="checkout-error">{locationsErrorMessage}</p>
                 ) : null}
@@ -2296,6 +2620,7 @@ function App() {
                   <div className="payment-methods-row">
                     {paymentMethodOptions.map((option) => {
                       const isSelected = paymentMethod === option.value;
+
                       return (
                         <button
                           key={option.value}
@@ -2349,6 +2674,7 @@ function App() {
                     "Order"
                   )}
                 </button>
+
                 {orderErrorMessage ? (
                   <p className="checkout-error">{orderErrorMessage}</p>
                 ) : null}

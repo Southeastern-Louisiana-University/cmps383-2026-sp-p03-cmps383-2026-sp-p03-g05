@@ -11,6 +11,10 @@ export type CartItem = CartItemInput & {
   quantity: number;
 };
 
+export type ReplaceCartItemInput = CartItemInput & {
+  quantity: number;
+};
+
 type CartContextValue = {
   cartCount: number;
   cartItems: CartItem[];
@@ -22,6 +26,7 @@ type CartContextValue = {
   decrementItem: (itemKey: string) => void;
   removeItem: (itemKey: string) => void;
   clearCart: () => void;
+  replaceCart: (items: ReplaceCartItemInput[]) => void;
 };
 
 const CartContext = createContext<CartContextValue | undefined>(undefined);
@@ -100,6 +105,35 @@ export function CartProvider({ children }: PropsWithChildren) {
     setItemsByKey({});
   }, []);
 
+  const replaceCart = useCallback((items: ReplaceCartItemInput[]) => {
+    setItemsByKey(() => {
+      const next: Record<string, CartItem> = {};
+
+      items.forEach((item) => {
+        const quantity = Math.max(0, Math.floor(item.quantity));
+        if (!item.key || quantity < 1) {
+          return;
+        }
+
+        const existing = next[item.key];
+        if (existing) {
+          existing.quantity += quantity;
+          return;
+        }
+
+        next[item.key] = {
+          key: item.key,
+          name: item.name,
+          unitPrice: item.unitPrice,
+          image: item.image,
+          quantity,
+        };
+      });
+
+      return next;
+    });
+  }, []);
+
   const cartItems = useMemo(() => Object.values(itemsByKey), [itemsByKey]);
 
   const cartCount = useMemo(
@@ -134,8 +168,9 @@ export function CartProvider({ children }: PropsWithChildren) {
       decrementItem,
       removeItem,
       clearCart,
+      replaceCart,
     }),
-    [cartCount, cartItems, subtotal, isInCart, getItemQuantity, toggleCartItem, incrementItem, decrementItem, removeItem, clearCart]
+    [cartCount, cartItems, subtotal, isInCart, getItemQuantity, toggleCartItem, incrementItem, decrementItem, removeItem, clearCart, replaceCart]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

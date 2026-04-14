@@ -9,6 +9,7 @@ import { BrandedLoadingScreen } from '@/components/branded-loading-screen';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/context/auth-context';
 import { useCart } from '@/context/cart-context';
+import { CheckoutFlowProvider } from '@/context/checkout-flow-context';
 import { BrandColors } from '@/constants/theme';
 import { locationsApi, ordersApi, usersApi, type LocationDto } from '@/lib/api';
 
@@ -329,7 +330,7 @@ export default function AppLayout() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading && !isAuthenticated) {
     return <BrandedLoadingScreen />;
   }
 
@@ -338,7 +339,7 @@ export default function AppLayout() {
   }
 
   return (
-    <>
+    <CheckoutFlowProvider value={{ openCheckout: handleOpenCheckout }}>
       <Tabs
         screenOptions={{
           header: () => <AppBanner cartCount={cartCount} onCartPress={() => setCartModalVisible(true)} />,
@@ -611,7 +612,7 @@ export default function AppLayout() {
           </View>
         </View>
       </Modal>
-    </>
+    </CheckoutFlowProvider>
   );
 }
 

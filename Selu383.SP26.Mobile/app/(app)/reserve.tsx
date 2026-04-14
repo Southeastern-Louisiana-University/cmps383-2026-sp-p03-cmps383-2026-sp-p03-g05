@@ -57,6 +57,8 @@ const paymentMethodOptions = [
 
 const calendarWeekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const successRedirectDelayMs = 3000;
+const reservationLeadTimeMs = 2 * 60 * 60 * 1000;
+const leadTimeClockRefreshMs = 30 * 1000;
 
 function formatDateLabel(dateValue: string) {
   const parsed = new Date(`${dateValue}T00:00:00`);
@@ -111,6 +113,30 @@ function formatTimeLabel(timeValue: string) {
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
   const minuteText = String(minute).padStart(2, '0');
   return `${hour12}:${minuteText} ${suffix}`;
+}
+
+function parseSlotDateTime(dateValue: string, timeValue: string) {
+  const datePart = dateValue.split('T')[0]?.trim();
+  const [hourToken, minuteToken, secondToken] = timeValue.trim().split(':');
+  if (!datePart) {
+    return null;
+  }
+
+  const hour = Number.parseInt(hourToken ?? '', 10);
+  const minute = Number.parseInt(minuteToken ?? '0', 10);
+  const second = Number.parseInt(secondToken ?? '0', 10);
+  if (Number.isNaN(hour) || Number.isNaN(minute) || Number.isNaN(second)) {
+    return null;
+  }
+
+  const parsed = new Date(
+    `${datePart}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
+  );
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
 }
 
 function DropdownField({
@@ -186,6 +212,7 @@ export default function ReserveScreen() {
   const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(null);
   const [isSuccessVisible, setSuccessVisible] = useState(false);
   const successRedirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   const maxSelectableDate = useMemo(() => addDays(today, 29), [today]);
   const minSelectableMonth = useMemo(() => monthStart(today), [today]);
@@ -273,6 +300,16 @@ export default function ReserveScreen() {
   }, []);
 
   useEffect(() => {
+    const intervalId = setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, leadTimeClockRefreshMs);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
     const loadLocations = async () => {
       setLoadingLocations(true);
       setLocationsErrorMessage(null);
@@ -317,6 +354,41 @@ export default function ReserveScreen() {
     void loadAvailability();
   }, [selectedLocationId, selectedDate]);
 
+  const slotOptions = useMemo(
+    () =>
+      availableSlots.map((slot) => {
+        if (!selectedDate) {
+          return {
+            ...slot,
+            isLeadTimeBlocked: false,
+            isSelectable: slot.isAvailable,
+          };
+        }
+
+        const slotDateTime = parseSlotDateTime(selectedDate, slot.time);
+        const earliestAllowedMs = currentTimeMs + reservationLeadTimeMs;
+        const isLeadTimeBlocked = !slotDateTime || slotDateTime.getTime() < earliestAllowedMs;
+
+        return {
+          ...slot,
+          isLeadTimeBlocked,
+          isSelectable: slot.isAvailable && !isLeadTimeBlocked,
+        };
+      }),
+    [availableSlots, currentTimeMs, selectedDate]
+  );
+
+  useEffect(() => {
+    if (!selectedTimeSlot) {
+      return;
+    }
+
+    const selectedSlot = slotOptions.find((slot) => slot.time === selectedTimeSlot);
+    if (!selectedSlot || !selectedSlot.isSelectable) {
+      setSelectedTimeSlot('');
+    }
+  }, [selectedTimeSlot, slotOptions]);
+
   const handleReserve = async () => {
     if (isSubmitting) {
       return;
@@ -334,6 +406,12 @@ export default function ReserveScreen() {
 
     if (!selectedTimeSlot) {
       setSubmitErrorMessage('Please select an available time slot.');
+      return;
+    }
+
+    const selectedSlot = slotOptions.find((slot) => slot.time === selectedTimeSlot);
+    if (!selectedSlot || !selectedSlot.isSelectable) {
+      setSubmitErrorMessage('Please select a time slot at least 2 hours in advance.');
       return;
     }
 
@@ -380,7 +458,7 @@ export default function ReserveScreen() {
     }
   };
 
-  const hasAvailableSlots = availableSlots.some((slot) => slot.isAvailable);
+  const hasAvailableSlots = slotOptions.some((slot) => slot.isSelectable);
 
   return (
     <ThemedView style={styles.screen}>
@@ -505,37 +583,44 @@ export default function ReserveScreen() {
               </View>
             ) : !selectedLocationId || !selectedDate ? (
               <ThemedText style={styles.helperText}>Select a location and date to view open time slots.</ThemedText>
-            ) : !hasAvailableSlots ? (
-              <ThemedText style={styles.helperText}>No open time slots for this date.</ThemedText>
+            ) : slotOptions.length === 0 ? (
+              <ThemedText style={styles.helperText}>
+                No open time slots for this date. Reservations require 2 hours notice.
+              </ThemedText>
             ) : (
-              <View style={styles.timeSlotsGrid}>
-                {availableSlots.map((slot) => {
-                  const isSelected = selectedTimeSlot === slot.time;
-                  return (
-                    <Pressable
-                      key={slot.time}
-                      style={({ pressed }) => [
-                        styles.timeSlotButton,
-                        slot.isAvailable ? styles.timeSlotAvailable : styles.timeSlotUnavailable,
-                        isSelected && styles.timeSlotSelected,
-                        pressed && slot.isAvailable && styles.timeSlotPressed,
-                      ]}
-                      disabled={!slot.isAvailable || isSubmitting}
-                      onPress={() => {
-                        setSelectedTimeSlot(slot.time);
-                        setSubmitErrorMessage(null);
-                        setSuccessVisible(false);
-                      }}>
-                      <ThemedText style={[styles.timeSlotLabel, !slot.isAvailable && styles.timeSlotLabelDisabled]}>
-                        {formatTimeLabel(slot.time)}
-                      </ThemedText>
-                      <ThemedText style={[styles.timeSlotMeta, !slot.isAvailable && styles.timeSlotLabelDisabled]}>
-                        {slot.availableTables} tables
-                      </ThemedText>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <>
+                <View style={styles.timeSlotsGrid}>
+                  {slotOptions.map((slot) => {
+                    const isSelected = selectedTimeSlot === slot.time;
+                    return (
+                      <Pressable
+                        key={slot.time}
+                        style={({ pressed }) => [
+                          styles.timeSlotButton,
+                          slot.isSelectable ? styles.timeSlotAvailable : styles.timeSlotUnavailable,
+                          isSelected && slot.isSelectable && styles.timeSlotSelected,
+                          pressed && slot.isSelectable && styles.timeSlotPressed,
+                        ]}
+                        disabled={!slot.isSelectable || isSubmitting}
+                        onPress={() => {
+                          setSelectedTimeSlot(slot.time);
+                          setSubmitErrorMessage(null);
+                          setSuccessVisible(false);
+                        }}>
+                        <ThemedText style={[styles.timeSlotLabel, !slot.isSelectable && styles.timeSlotLabelDisabled]}>
+                          {formatTimeLabel(slot.time)}
+                        </ThemedText>
+                        <ThemedText style={[styles.timeSlotMeta, !slot.isSelectable && styles.timeSlotLabelDisabled]}>
+                          {slot.availableTables} tables
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {!hasAvailableSlots ? (
+                  <ThemedText style={styles.helperText}>Reservations require at least 2 hours notice.</ThemedText>
+                ) : null}
+              </>
             )}
             {availabilityErrorMessage ? <ThemedText style={styles.errorText}>{availabilityErrorMessage}</ThemedText> : null}
           </View>

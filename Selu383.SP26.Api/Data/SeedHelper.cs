@@ -113,25 +113,66 @@ public static class SeedHelper
         {
             await userManager.AddToRoleAsync(sue, RoleNames.User);
         }
+
+        var susie = await userManager.FindByNameAsync("susie");
+        if (susie == null)
+        {
+            susie = new User
+            {
+                UserName = "susie",
+                FirstName = "Susie",
+                LastName = "Queue",
+                RewardsTotal = 0
+            };
+            await userManager.CreateAsync(susie, defaultPassword);
+        }
+        if (!await userManager.IsInRoleAsync(susie, RoleNames.Employee))
+        {
+            await userManager.AddToRoleAsync(susie, RoleNames.Employee);
+        }
+        var shouldUpdateSusie = false;
+        if (susie.FirstName != "Susie")
+        {
+            susie.FirstName = "Susie";
+            shouldUpdateSusie = true;
+        }
+        if (susie.LastName != "Queue")
+        {
+            susie.LastName = "Queue";
+            shouldUpdateSusie = true;
+        }
+        if (shouldUpdateSusie)
+        {
+            await userManager.UpdateAsync(susie);
+        }
     }
 
     private static async Task AddRoles(IServiceProvider serviceProvider)
     {
         var roleManager = serviceProvider.GetRequiredService<RoleManager<Role>>();
-        if (roleManager.Roles.Any())
+        var requiredRoles = new[]
         {
-            return;
+            RoleNames.Admin,
+            RoleNames.Employee,
+            RoleNames.User
+        };
+
+        var existingRoleNames = await roleManager.Roles
+            .Select(x => x.Name ?? string.Empty)
+            .ToListAsync();
+
+        foreach (var roleName in requiredRoles)
+        {
+            if (existingRoleNames.Contains(roleName, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            await roleManager.CreateAsync(new Role
+            {
+                Name = roleName
+            });
         }
-
-        await roleManager.CreateAsync(new Role
-        {
-            Name = RoleNames.Admin
-        });
-
-        await roleManager.CreateAsync(new Role
-        {
-            Name = RoleNames.User
-        });
     }
 
     private static async Task AddLocations(DataContext dataContext)

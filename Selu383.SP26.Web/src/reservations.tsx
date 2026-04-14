@@ -122,6 +122,40 @@ const formatTimeLabel = (value: string) => {
 };
 
 const reservationSuccessPopupDurationMs = 3000;
+const reservationLeadTimeMs = 2 * 60 * 60 * 1000;
+const leadTimeClockRefreshMs = 30 * 1000;
+
+const parseSlotDateTime = (dateValue: string, timeValue: string) => {
+  const datePart = dateValue.split("T")[0]?.trim();
+  const [hourToken, minuteToken, secondToken] = timeValue.trim().split(":");
+
+  if (!datePart) {
+    return null;
+  }
+
+  const hour = Number.parseInt(hourToken ?? "", 10);
+  const minute = Number.parseInt(minuteToken ?? "0", 10);
+  const second = Number.parseInt(secondToken ?? "0", 10);
+  if (
+    Number.isNaN(hour) ||
+    Number.isNaN(minute) ||
+    Number.isNaN(second)
+  ) {
+    return null;
+  }
+
+  const parsed = new Date(
+    `${datePart}T${String(hour).padStart(2, "0")}:${String(minute).padStart(
+      2,
+      "0",
+    )}:${String(second).padStart(2, "0")}`,
+  );
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+};
 
 export default function ReservationsModal({
   isOpen,
@@ -164,6 +198,7 @@ export default function ReservationsModal({
     null,
   );
   const [isReservationSuccessVisible, setIsReservationSuccessVisible] = useState(false);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   const maxSelectableDate = useMemo(() => addDays(today, 29), [today]);
   const minSelectableMonth = useMemo(() => monthStart(today), [today]);
@@ -222,7 +257,32 @@ export default function ReservationsModal({
 
   const canGoPreviousMonth = monthKey(visibleMonth) !== monthKey(minSelectableMonth);
   const canGoNextMonth = monthKey(visibleMonth) !== monthKey(maxSelectableMonth);
-  const hasAvailableSlots = availableSlots.some((slot) => slot.isAvailable);
+  const slotOptions = useMemo(
+    () =>
+      availableSlots.map((slot) => {
+        if (!selectedDate) {
+          return {
+            ...slot,
+            isLeadTimeBlocked: false,
+            isSelectable: slot.isAvailable,
+          };
+        }
+
+        const slotDateTime = parseSlotDateTime(selectedDate, slot.time);
+        const earliestAllowedMs = currentTimeMs + reservationLeadTimeMs;
+        const isLeadTimeBlocked =
+          !slotDateTime || slotDateTime.getTime() < earliestAllowedMs;
+
+        return {
+          ...slot,
+          isLeadTimeBlocked,
+          isSelectable: slot.isAvailable && !isLeadTimeBlocked,
+        };
+      }),
+    [availableSlots, currentTimeMs, selectedDate],
+  );
+
+  const hasAvailableSlots = slotOptions.some((slot) => slot.isSelectable);
 
   useEffect(() => {
     if (!isReservationSuccessVisible) {
@@ -238,6 +298,31 @@ export default function ReservationsModal({
       window.clearTimeout(timeoutId);
     };
   }, [isReservationSuccessVisible, onClose]);
+
+  useEffect(() => {
+    if (!isOpen || !isAuthenticated) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, leadTimeClockRefreshMs);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isAuthenticated, isOpen]);
+
+  useEffect(() => {
+    if (!selectedTimeSlot) {
+      return;
+    }
+
+    const selectedSlot = slotOptions.find((slot) => slot.time === selectedTimeSlot);
+    if (!selectedSlot || !selectedSlot.isSelectable) {
+      setSelectedTimeSlot("");
+    }
+  }, [selectedTimeSlot, slotOptions]);
 
   useEffect(() => {
     if (!selectedDate) {
@@ -438,6 +523,14 @@ export default function ReservationsModal({
 
     if (!selectedTimeSlot) {
       setReservationErrorMessage("Please select an available time slot.");
+      return;
+    }
+
+    const selectedSlot = slotOptions.find((slot) => slot.time === selectedTimeSlot);
+    if (!selectedSlot || !selectedSlot.isSelectable) {
+      setReservationErrorMessage(
+        "Please select a time slot at least 2 hours in advance.",
+      );
       return;
     }
 
@@ -741,29 +834,43 @@ export default function ReservationsModal({
                 <p className="customer-helper-text">
                   Select a location and date to view open time slots.
                 </p>
-              ) : !hasAvailableSlots ? (
-                <p className="customer-helper-text">No open time slots for this date.</p>
+              ) : slotOptions.length === 0 ? (
+                <p className="customer-helper-text">
+                  No open time slots for this date. Reservations require 2 hours
+                  notice.
+                </p>
               ) : (
-                <div className="reservation-slots-grid">
-                  {availableSlots.map((slot) => (
-                    <button
-                      key={slot.time}
-                      type="button"
-                      className={`reservation-slot-btn ${
-                        slot.isAvailable ? "available" : "unavailable"
-                      } ${selectedTimeSlot === slot.time ? "selected" : ""}`}
-                      disabled={!slot.isAvailable || isSubmittingReservation}
-                      onClick={() => {
-                        setSelectedTimeSlot(slot.time);
-                        setReservationErrorMessage(null);
-                        setIsReservationSuccessVisible(false);
-                      }}
-                    >
-                      <strong>{formatTimeLabel(slot.time)}</strong>
-                      <span>{slot.availableTables} tables</span>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="reservation-slots-grid">
+                    {slotOptions.map((slot) => (
+                      <button
+                        key={slot.time}
+                        type="button"
+                        className={`reservation-slot-btn ${
+                          slot.isSelectable ? "available" : "unavailable"
+                        } ${
+                          selectedTimeSlot === slot.time && slot.isSelectable
+                            ? "selected"
+                            : ""
+                        }`}
+                        disabled={!slot.isSelectable || isSubmittingReservation}
+                        onClick={() => {
+                          setSelectedTimeSlot(slot.time);
+                          setReservationErrorMessage(null);
+                          setIsReservationSuccessVisible(false);
+                        }}
+                      >
+                        <strong>{formatTimeLabel(slot.time)}</strong>
+                        <span>{slot.availableTables} tables</span>
+                      </button>
+                    ))}
+                  </div>
+                  {!hasAvailableSlots ? (
+                    <p className="customer-helper-text">
+                      Reservations require at least 2 hours notice.
+                    </p>
+                  ) : null}
+                </>
               )}
               {availabilityErrorMessage ? (
                 <p className="checkout-error">{availabilityErrorMessage}</p>

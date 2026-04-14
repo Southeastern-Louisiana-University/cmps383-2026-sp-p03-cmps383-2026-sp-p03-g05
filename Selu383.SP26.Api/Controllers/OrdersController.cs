@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Selu383.SP26.Api.Data;
 using Selu383.SP26.Api.Extensions;
+using Selu383.SP26.Api.Features.Auth;
 using Selu383.SP26.Api.Features.Items;
 using Selu383.SP26.Api.Features.Locations;
 using Selu383.SP26.Api.Features.Orders;
@@ -14,6 +15,152 @@ namespace Selu383.SP26.Api.Controllers;
 [Authorize]
 public class OrdersController(DataContext dataContext) : ControllerBase
 {
+    [HttpGet]
+    [Authorize(Roles = RoleNames.Admin + "," + RoleNames.Employee)]
+    public async Task<ActionResult<List<StaffOrderDto>>> GetOrders()
+    {
+        var result = await dataContext.Set<Order>()
+            .AsNoTracking()
+            .OrderByDescending(x => x.DateOrdered)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new StaffOrderDto
+            {
+                OrderedAt = x.DateOrdered,
+                ItemCount = x.OrderMenuItems.Sum(y => (int?)y.Quantity) ?? 0,
+                LastName = x.User != null ? x.User.LastName : string.Empty,
+                FirstName = x.User != null ? x.User.FirstName : string.Empty,
+                Phone = x.User != null ? x.User.PhoneNumber ?? string.Empty : string.Empty,
+                Location = x.Location != null ? x.Location.Address : string.Empty,
+                PickupMethod = x.PickupMethod,
+                OrderStatus = x.OrderStatus != null ? x.OrderStatus.Name : string.Empty,
+                OrderNumber = x.Id
+            })
+            .ToListAsync();
+
+        return Ok(result);
+    }
+
+    [HttpGet("{id:int}")]
+    [Authorize(Roles = RoleNames.Admin + "," + RoleNames.Employee)]
+    public async Task<ActionResult<StaffOrderDetailDto>> GetOrderDetails(int id)
+    {
+        var result = await dataContext.Set<Order>()
+            .AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new StaffOrderDetailDto
+            {
+                OrderNumber = x.Id,
+                OrderedAt = x.DateOrdered,
+                LastName = x.User != null ? x.User.LastName : string.Empty,
+                FirstName = x.User != null ? x.User.FirstName : string.Empty,
+                Phone = x.User != null ? x.User.PhoneNumber ?? string.Empty : string.Empty,
+                Location = x.Location != null ? x.Location.Address : string.Empty,
+                PickupMethod = x.PickupMethod,
+                OrderStatus = x.OrderStatus != null ? x.OrderStatus.Name : string.Empty,
+                Total = x.OrderMenuItems.Sum(y => (decimal?)(y.Quantity * y.MenuItem!.Price)) ?? 0m,
+                Items = x.OrderMenuItems
+                    .OrderBy(y => y.MenuItem!.ItemName)
+                    .Select(y => new StaffOrderDetailItemDto
+                    {
+                        MenuItemId = y.MenuItemId,
+                        Name = y.MenuItem != null ? y.MenuItem.ItemName : string.Empty,
+                        Quantity = y.Quantity,
+                        UnitPrice = y.MenuItem != null ? y.MenuItem.Price : 0m,
+                    })
+                    .ToList(),
+            })
+            .FirstOrDefaultAsync();
+
+        if (result == null)
+        {
+            return NotFound();
+        }
+
+        return Ok(result);
+    }
+
+    [HttpGet("current-summary")]
+    [Authorize(Roles = RoleNames.Admin + "," + RoleNames.Employee)]
+    public async Task<ActionResult<CurrentOrderCountsDto>> GetCurrentOrderCounts()
+    {
+        try
+        {
+            var orderSnapshots = await dataContext.Set<Order>()
+                .AsNoTracking()
+                .Select(x => new
+                {
+                    x.PickupMethod,
+                    StatusName = x.OrderStatus != null ? x.OrderStatus.Name : string.Empty
+                })
+                .ToListAsync();
+
+            var activeOrders = orderSnapshots
+                .Where(x =>
+                    !string.Equals(x.StatusName, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(x.StatusName, "Completed", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var inStoreCount = activeOrders
+                .Count(x => string.Equals(x.PickupMethod, "In Store", StringComparison.OrdinalIgnoreCase));
+
+            var driveThroughCount = activeOrders
+                .Count(x => string.Equals(x.PickupMethod, "Drive Through", StringComparison.OrdinalIgnoreCase));
+
+            return Ok(new CurrentOrderCountsDto
+            {
+                InStoreCount = inStoreCount,
+                DriveThroughCount = driveThroughCount
+            });
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Current summary fallback: {exception.Message}");
+            return Ok(new CurrentOrderCountsDto
+            {
+                InStoreCount = 0,
+                DriveThroughCount = 0
+            });
+        }
+    }
+
+    [HttpPut("{id}/status")]
+    [Authorize(Roles = RoleNames.Admin + "," + RoleNames.Employee)]
+    public async Task<ActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto? dto)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Status))
+        {
+            return BadRequest("Status is required.");
+        }
+
+        var order = await dataContext.Set<Order>()
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (order == null)
+        {
+            return NotFound();
+        }
+
+        var trimmedStatus = dto.Status.Trim();
+
+        var statusEntity = await dataContext.Set<OrderStatus>()
+            .FirstOrDefaultAsync(x => x.Name == trimmedStatus);
+
+        if (statusEntity == null)
+        {
+            return BadRequest($"Invalid status: {trimmedStatus}");
+        }
+
+        order.OrderStatusId = statusEntity.Id;
+
+        await dataContext.SaveChangesAsync();
+
+        return Ok(new
+        {
+            orderId = order.Id,
+            status = trimmedStatus
+        });
+    }
+
     [HttpGet("history")]
     public async Task<ActionResult<List<OrderHistoryDto>>> History()
     {
