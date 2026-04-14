@@ -37,3 +37,8 @@ public class OrderItemDto
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
 }
+
+public class UpdateOrderStatusDto
+{
+    public string Status { get; set; } = string.Empty;
+}

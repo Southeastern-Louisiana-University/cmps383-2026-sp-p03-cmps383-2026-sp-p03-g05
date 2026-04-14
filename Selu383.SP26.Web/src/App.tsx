@@ -48,7 +48,9 @@ import visapayImg from "./assets/visapay.png";
 import applepayImg from "./assets/applepay.png";
 import gpayImg from "./assets/gpay.png";
 import CustomerPage from "./customerpage";
+import EmployeeDashboard from "./EmployeeDashboard";
 import ReservationsModal, { type ReservationLoginPayload } from "./reservations";
+import MenuEditor from "./MenuEditor";
 
 const menuItemImages: Record<string, string> = {
   "Iced Latte": icedLateImg,
@@ -400,6 +402,7 @@ const formatPhoneNumber = (value: string) => {
   return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6)}`;
 };
 
+const menuEditorPath = "/menu-editor";
 const calculateRewardPoints = (orderTotal: number) =>
   Math.max(0, Math.round(orderTotal * 10));
 const rewardsCounterDurationMs = 1200;
@@ -409,6 +412,7 @@ const buildApiUrl = (path: string) =>
   `${apiBaseUrl.replace(/\/$/, "")}${path}`;
 
 const customerPagePath = "/customerpage";
+const employeeDashboardPath = "/dashboard";
 const legacyReservationsPath = "/reservations";
 
 const normalizePath = (path: string) => {
@@ -471,6 +475,7 @@ function App() {
   const [loggedInUserName, setLoggedInUserName] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [pridePoints, setPridePoints] = useState(0);
+  const [userRoles, setUserRoles] = useState<string[]>([]);
   const [isSessionResolved, setIsSessionResolved] = useState(false);
   const [currentPath, setCurrentPath] = useState(() =>
     normalizePath(window.location.pathname),
@@ -525,19 +530,28 @@ function App() {
   const rewardsCounterTimer = useRef<number | null>(null);
   const authControlRef = useRef<HTMLDivElement | null>(null);
   const navAreaRef = useRef<HTMLDivElement | null>(null);
+
+  const isMenuEditorPage = currentPath === menuEditorPath;
   const isCustomerPage = currentPath === customerPagePath;
+  const isEmployeeDashboardPage = currentPath === employeeDashboardPath;
+  const isEmployeeOrAdmin =
+    userRoles.some((role) => role.toLowerCase() === "employee") ||
+    userRoles.some((role) => role.toLowerCase() === "admin");
+
   const displayMenuItems = [
     ...drinkMenuItems,
     ...sweetCrepeMenuItems,
     ...savoryCrepeMenuItems,
     ...bagelMenuItems,
   ];
+
   const displayMenuItemByName = new Map(
     displayMenuItems.map((item) => [
       item.name,
       { ...item, unitPrice: parsePrice(item.price) },
     ]),
   );
+
   const cartSummaryItems: CartSummaryItem[] = Object.entries(cartItemsByName)
     .map(([name, quantity]) => {
       const catalogItem = displayMenuItemByName.get(name);
@@ -554,6 +568,7 @@ function App() {
       };
     })
     .filter((item): item is CartSummaryItem => item !== null);
+
   const cartCount = cartSummaryItems.reduce(
     (sum, item) => sum + item.quantity,
     0,
@@ -565,10 +580,12 @@ function App() {
 
   const carouselMenuItems = displayMenuItems.length > 0 ? displayMenuItems : drinks;
   const currentCarouselItem = carouselMenuItems[carouselIndex];
+
   const goToPreviousCarouselItem = () =>
     setCarouselIndex((previous) =>
       previous === 0 ? carouselMenuItems.length - 1 : previous - 1,
     );
+
   const goToNextCarouselItem = () =>
     setCarouselIndex((previous) => (previous + 1) % carouselMenuItems.length);
 
@@ -576,6 +593,7 @@ function App() {
     carouselMenuItems[
       (carouselIndex - 1 + carouselMenuItems.length) % carouselMenuItems.length
     ];
+
   const nextCarouselItem =
     carouselMenuItems[(carouselIndex + 1) % carouselMenuItems.length];
 
@@ -675,6 +693,7 @@ function App() {
   const navigateToPath = (path: string) => {
     const normalizedPath = normalizePath(path);
     const currentLocationPath = normalizePath(window.location.pathname);
+
     if (currentLocationPath !== normalizedPath) {
       window.history.pushState({}, "", normalizedPath);
     }
@@ -686,6 +705,7 @@ function App() {
 
   const handleUserIconClick = () => {
     setIsMobileNavOpen(false);
+
     if (loggedInUserName) {
       setIsAuthPopupOpen(false);
       setIsUserMenuOpen((previous) => !previous);
@@ -698,6 +718,12 @@ function App() {
   const handleAccountClick = () => {
     setIsUserMenuOpen(false);
     setIsReservationsModalOpen(false);
+
+    if (isEmployeeOrAdmin) {
+      navigateToPath(employeeDashboardPath);
+      return;
+    }
+
     navigateToPath(customerPagePath);
   };
 
@@ -730,6 +756,7 @@ function App() {
       setLoggedInUserName(null);
       setCurrentUserId(null);
       setPridePoints(0);
+      setUserRoles([]);
       setLoginPassword("");
       setIsReservationsModalOpen(false);
       setIsSessionResolved(true);
@@ -743,6 +770,7 @@ function App() {
     };
 
     window.addEventListener("popstate", handlePopState);
+
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
@@ -762,12 +790,14 @@ function App() {
             setLoggedInUserName(null);
             setCurrentUserId(null);
             setPridePoints(0);
+            setUserRoles([]);
             setIsSessionResolved(true);
           }
           return;
         }
 
         const user = (await response.json()) as AuthenticationUserDto;
+
         if (!isMounted) {
           return;
         }
@@ -775,6 +805,7 @@ function App() {
         setLoggedInUserName(user.userName);
         setCurrentUserId(user.id);
         setPridePoints(user.pridePoints ?? 0);
+        setUserRoles(user.roles ?? []);
         setIsSessionResolved(true);
       } catch {
         if (!isMounted) {
@@ -784,6 +815,7 @@ function App() {
         setLoggedInUserName(null);
         setCurrentUserId(null);
         setPridePoints(0);
+        setUserRoles([]);
         setIsSessionResolved(true);
       }
     };
@@ -813,6 +845,7 @@ function App() {
         }
 
         const user = (await response.json()) as AuthenticationUserDto;
+
         if (!isMounted) {
           return;
         }
@@ -858,6 +891,7 @@ function App() {
 
     const handleOutsidePointerDown = (event: PointerEvent) => {
       const target = event.target;
+
       if (!(target instanceof Node)) {
         return;
       }
@@ -871,6 +905,7 @@ function App() {
     };
 
     document.addEventListener("pointerdown", handleOutsidePointerDown);
+
     return () => {
       document.removeEventListener("pointerdown", handleOutsidePointerDown);
     };
@@ -883,6 +918,7 @@ function App() {
 
     const handleOutsidePointerDown = (event: PointerEvent) => {
       const target = event.target;
+
       if (!(target instanceof Node)) {
         return;
       }
@@ -895,6 +931,7 @@ function App() {
     };
 
     document.addEventListener("pointerdown", handleOutsidePointerDown);
+
     return () => {
       document.removeEventListener("pointerdown", handleOutsidePointerDown);
     };
@@ -908,6 +945,7 @@ function App() {
     };
 
     window.addEventListener("resize", handleResize);
+
     return () => {
       window.removeEventListener("resize", handleResize);
     };
@@ -927,12 +965,14 @@ function App() {
         }
 
         const apiMenuItems = (await response.json()) as ApiMenuItemDto[];
+
         if (!isMounted || apiMenuItems.length === 0) {
           return;
         }
 
         const mappedItems = apiMenuItems.map((item) => {
           const normalizedName = normalizeMenuItemName(item.itemName);
+
           return {
             type: item.type,
             featured: item.featured,
@@ -956,12 +996,15 @@ function App() {
         const nextSweetCrepeItems = foodItems.filter((item) =>
           sweetCrepeItemNames.has(item.name),
         );
+
         const nextSavoryCrepeItems = foodItems.filter((item) =>
           savoryCrepeItemNames.has(item.name),
         );
+
         const nextBagelItems = foodItems.filter((item) =>
           bagelItemNames.has(item.name),
         );
+
         const nextOtherFoodItems = foodItems.filter(
           (item) =>
             !sweetCrepeItemNames.has(item.name) &&
@@ -1019,6 +1062,7 @@ function App() {
   const toggleCartItem = (itemName: string) => {
     setCartItemsByName((previous) => {
       const currentQuantity = previous[itemName] ?? 0;
+
       if (currentQuantity > 0) {
         const { [itemName]: _, ...rest } = previous;
         return rest;
@@ -1041,6 +1085,7 @@ function App() {
   const decrementCartItem = (itemName: string) => {
     setCartItemsByName((previous) => {
       const currentQuantity = previous[itemName] ?? 0;
+
       if (currentQuantity <= 1) {
         const { [itemName]: _, ...rest } = previous;
         return rest;
@@ -1058,6 +1103,7 @@ function App() {
       if (!(itemName in previous)) {
         return previous;
       }
+
       const { [itemName]: _, ...rest } = previous;
       return rest;
     });
@@ -1072,10 +1118,12 @@ function App() {
       window.clearTimeout(closeCheckoutTimer.current);
       closeCheckoutTimer.current = null;
     }
+
     if (rewardsCounterTimer.current !== null) {
       window.clearInterval(rewardsCounterTimer.current);
       rewardsCounterTimer.current = null;
     }
+
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(false);
     setOrderErrorMessage(null);
@@ -1104,6 +1152,7 @@ function App() {
 
       const locationResults = (await response.json()) as LocationDto[];
       setLocations(locationResults);
+
       setSelectedLocationId((current) => {
         if (
           current !== "" &&
@@ -1156,6 +1205,7 @@ function App() {
 
       if (progress >= 1) {
         setRewardCounter(pointsToAdd);
+
         if (rewardsCounterTimer.current !== null) {
           window.clearInterval(rewardsCounterTimer.current);
           rewardsCounterTimer.current = null;
@@ -1170,7 +1220,6 @@ function App() {
     }
 
     try {
-      // Fetch current points first, then update with increment API.
       await fetch(buildApiUrl(`/api/users/${currentUserId}`), {
         credentials: "include",
       });
@@ -1219,6 +1268,7 @@ function App() {
       const selectedPaymentOption = paymentMethodOptions.find(
         (option) => option.value === paymentMethod,
       );
+
       const response = await fetch(buildApiUrl("/api/orders"), {
         method: "POST",
         credentials: "include",
@@ -1240,6 +1290,7 @@ function App() {
 
       if (!response.ok) {
         let message = `Order failed (${response.status})`;
+
         try {
           const responseText = await response.text();
           if (responseText) {
@@ -1248,6 +1299,7 @@ function App() {
         } catch {
           // Keep fallback message when response parsing fails.
         }
+
         throw new Error(message);
       }
 
@@ -1255,9 +1307,11 @@ function App() {
       await applyRewardsFromOrder(pointsToAdd);
       startRewardsCounterAnimation(pointsToAdd);
       setOrderSuccessMessageVisible(true);
+
       if (closeCheckoutTimer.current !== null) {
         window.clearTimeout(closeCheckoutTimer.current);
       }
+
       closeCheckoutTimer.current = window.setTimeout(() => {
         clearCart();
         closeCartAndCheckout();
@@ -1276,6 +1330,7 @@ function App() {
       if (closeCheckoutTimer.current !== null) {
         window.clearTimeout(closeCheckoutTimer.current);
       }
+
       if (rewardsCounterTimer.current !== null) {
         window.clearInterval(rewardsCounterTimer.current);
       }
@@ -1298,6 +1353,7 @@ function App() {
 
     if (!response.ok) {
       let message = `Login failed (${response.status})`;
+
       try {
         const responseText = await response.text();
         if (responseText) {
@@ -1311,13 +1367,28 @@ function App() {
     }
 
     const user = (await response.json()) as AuthenticationUserDto;
+    const nextRoles = user.roles ?? [];
+
     setLoggedInUserName(user.userName);
     setCurrentUserId(user.id);
     setPridePoints(user.pridePoints ?? 0);
+    setUserRoles(nextRoles);
     setIsSessionResolved(true);
     setLoginPassword("");
     setIsAuthPopupOpen(false);
     setIsUserMenuOpen(false);
+
+    const isStaffUser = nextRoles.some(
+      (role) =>
+        role.toLowerCase() === "employee" || role.toLowerCase() === "admin",
+    );
+
+    if (isStaffUser) {
+      navigateToPath(employeeDashboardPath);
+    } else {
+      navigateToPath(customerPagePath);
+    }
+
     return user;
   };
 
@@ -1327,6 +1398,7 @@ function App() {
 
   const handleLoginSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     if (isSubmittingLogin) {
       return;
     }
@@ -1346,6 +1418,7 @@ function App() {
 
   const handleSignUpSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     if (isSubmittingSignUp) {
       return;
     }
@@ -1394,6 +1467,7 @@ function App() {
     try {
       const [firstName, ...lastNameParts] = trimmedName.split(/\s+/);
       const lastName = lastNameParts.join(" ").trim() || "Customer";
+
       const payload: CreateUserDto = {
         userName: trimmedUserName,
         password: trimmedPassword,
@@ -1419,6 +1493,7 @@ function App() {
 
       if (!response.ok) {
         let message = `Sign up failed (${response.status})`;
+
         try {
           const responseText = await response.text();
           if (responseText) {
@@ -1427,6 +1502,7 @@ function App() {
         } catch {
           // Keep fallback message when response parsing fails.
         }
+
         throw new Error(message);
       }
 
@@ -1547,6 +1623,7 @@ function App() {
               >
                 <CircleUserRound size={24} />
               </button>
+
               {loggedInUserName ? (
                 <span className="auth-user-name">{loggedInUserName}</span>
               ) : null}
@@ -1591,6 +1668,7 @@ function App() {
                       required
                     />
                   </label>
+
                   <label className="auth-field">
                     <span>Password</span>
                     <input
@@ -1601,6 +1679,7 @@ function App() {
                       required
                     />
                   </label>
+
                   <div className="auth-actions-row">
                     <button
                       type="submit"
@@ -1618,6 +1697,7 @@ function App() {
                       Sign Up
                     </button>
                   </div>
+
                   {loginErrorMessage ? (
                     <p className="auth-error">{loginErrorMessage}</p>
                   ) : null}
@@ -1652,9 +1732,30 @@ function App() {
         />
       ) : null}
 
+      {isEmployeeDashboardPage && isEmployeeOrAdmin ? (
+  <EmployeeDashboard
+    userName={loggedInUserName ?? "Staff"}
+    roles={userRoles}
+    buildApiUrl={buildApiUrl}
+    onOpenMenuEditor={() => navigateToPath(menuEditorPath)}
+  />
+) : null}
+
+{isMenuEditorPage && isEmployeeOrAdmin ? (
+  <MenuEditor
+    buildApiUrl={buildApiUrl}
+    onBack={() => navigateToPath(employeeDashboardPath)}
+  />
+) : null}
+
       <main
         style={{
-          display: isCustomerPage ? "none" : undefined,
+          display:
+        isCustomerPage ||
+        (isEmployeeDashboardPage && isEmployeeOrAdmin) ||
+        (isMenuEditorPage && isEmployeeOrAdmin)
+          ? "none"
+          : undefined,
         }}
       >
         <section className="hero">
@@ -1696,6 +1797,7 @@ function App() {
                   />
                   <p className="hero-slide-label">{previousCarouselItem.name}</p>
                 </div>
+
                 <div className="hero-slide hero-slide-current">
                   <img
                     src={currentCarouselItem.image}
@@ -1704,11 +1806,13 @@ function App() {
                   />
                   <p className="hero-slide-label">{currentCarouselItem.name}</p>
                 </div>
+
                 <div className="hero-slide hero-slide-side" aria-hidden="true">
                   <img src={nextCarouselItem.image} alt="" className="hero-slide-image" />
                   <p className="hero-slide-label">{nextCarouselItem.name}</p>
                 </div>
               </div>
+
               <div className="hero-carousel-controls">
                 <button
                   type="button"
@@ -1908,6 +2012,7 @@ function App() {
                     disabled={isSubmittingSignUp}
                   />
                 </label>
+
                 <label className="signup-field">
                   <span>Phone Number</span>
                   <input
@@ -1946,6 +2051,7 @@ function App() {
                     disabled={isSubmittingSignUp}
                   />
                 </label>
+
                 <label className="signup-field">
                   <span>Password</span>
                   <input
@@ -1982,6 +2088,7 @@ function App() {
                     disabled={isSubmittingSignUp}
                   />
                 </label>
+
                 <label className="signup-field">
                   <span>State</span>
                   <input
@@ -1993,6 +2100,7 @@ function App() {
                     disabled={isSubmittingSignUp}
                   />
                 </label>
+
                 <label className="signup-field">
                   <span>Zip</span>
                   <input
@@ -2270,6 +2378,7 @@ function App() {
                       : null}
                   </select>
                 </label>
+
                 {locationsErrorMessage ? (
                   <p className="checkout-error">{locationsErrorMessage}</p>
                 ) : null}
@@ -2296,6 +2405,7 @@ function App() {
                   <div className="payment-methods-row">
                     {paymentMethodOptions.map((option) => {
                       const isSelected = paymentMethod === option.value;
+
                       return (
                         <button
                           key={option.value}
@@ -2349,6 +2459,7 @@ function App() {
                     "Order"
                   )}
                 </button>
+
                 {orderErrorMessage ? (
                   <p className="checkout-error">{orderErrorMessage}</p>
                 ) : null}
