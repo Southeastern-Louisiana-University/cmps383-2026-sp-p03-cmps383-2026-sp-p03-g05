@@ -1,5 +1,5 @@
-import { HeartOff, Square, SquareCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { HeartOff, RefreshCw, Square, SquareCheck } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 type FeaturedMenuItem = {
   name: string;
@@ -20,6 +20,8 @@ type OrderHistoryDto = {
   id: number;
   orderedAt: string;
   total: number;
+  status?: string;
+  orderStatus?: string;
   items: OrderHistoryItemDto[];
 };
 
@@ -48,15 +50,17 @@ type CustomerPageProps = {
   featuredItems: FeaturedMenuItem[];
   isInCart: (itemName: string) => boolean;
   onToggleCartItem: (itemName: string) => void;
+  onOrderAgain: (order: OrderHistoryDto) => void;
   buildApiUrl: (path: string) => string;
   resolveMenuItemImage: (itemName: string) => string;
 };
 
 const levels = [1, 2, 3, 4, 5];
 const emptyFavoriteSlots = [0, 1, 2];
+const centralTimeZone = "America/Chicago";
 
 const getCompletedLevels = (pridePoints: number) => {
-  if (pridePoints < 0) {
+  if (pridePoints <= 0) {
     return 0;
   }
   if (pridePoints <= 1000) {
@@ -80,10 +84,14 @@ const formatOrderDate = (value: string) => {
     return value;
   }
 
-  return parsed.toLocaleDateString("en-US", {
+  return parsed.toLocaleString("en-US", {
+    timeZone: centralTimeZone,
     month: "numeric",
     day: "numeric",
     year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
   });
 };
 
@@ -128,11 +136,13 @@ export default function CustomerPage({
   featuredItems,
   isInCart,
   onToggleCartItem,
+  onOrderAgain,
   buildApiUrl,
   resolveMenuItemImage,
 }: CustomerPageProps) {
   const [recentOrders, setRecentOrders] = useState<OrderHistoryDto[]>([]);
   const [isLoadingOrderHistory, setIsLoadingOrderHistory] = useState(false);
+  const [isRefreshingOrderHistory, setIsRefreshingOrderHistory] = useState(false);
   const [upcomingReservations, setUpcomingReservations] = useState<
     UpcomingReservation[]
   >([]);
@@ -140,11 +150,13 @@ export default function CustomerPage({
     useState(false);
   const completedLevels = getCompletedLevels(pridePoints);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadOrderHistory = async () => {
-      setIsLoadingOrderHistory(true);
+  const loadOrderHistory = useCallback(
+    async (mode: "initial" | "refresh" = "initial") => {
+      if (mode === "initial") {
+        setIsLoadingOrderHistory(true);
+      } else {
+        setIsRefreshingOrderHistory(true);
+      }
 
       try {
         const response = await fetch(buildApiUrl("/api/orders/history"), {
@@ -152,9 +164,7 @@ export default function CustomerPage({
         });
 
         if (response.status === 401) {
-          if (isMounted) {
-            setRecentOrders([]);
-          }
+          setRecentOrders([]);
           return;
         }
 
@@ -163,30 +173,25 @@ export default function CustomerPage({
         }
 
         const orderHistory = (await response.json()) as OrderHistoryDto[];
-        if (!isMounted) {
-          return;
-        }
-
         setRecentOrders(orderHistory.slice(0, 3));
       } catch {
-        if (!isMounted) {
-          return;
+        if (mode === "initial") {
+          setRecentOrders([]);
         }
-
-        setRecentOrders([]);
       } finally {
-        if (isMounted) {
+        if (mode === "initial") {
           setIsLoadingOrderHistory(false);
+        } else {
+          setIsRefreshingOrderHistory(false);
         }
       }
-    };
+    },
+    [buildApiUrl],
+  );
 
-    void loadOrderHistory();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [buildApiUrl]);
+  useEffect(() => {
+    void loadOrderHistory("initial");
+  }, [loadOrderHistory, userName]);
 
   useEffect(() => {
     let isMounted = true;
@@ -292,7 +297,7 @@ export default function CustomerPage({
     return () => {
       isMounted = false;
     };
-  }, [buildApiUrl]);
+  }, [buildApiUrl, userName]);
 
   return (
     <main className="customer-main">
@@ -323,9 +328,23 @@ export default function CustomerPage({
           </section>
 
           <section className="customer-card">
-            <h2>ORDER AGAIN!</h2>
+            <div className="customer-order-again-header">
+              <h2>ORDER AGAIN!</h2>
+              <button
+                type="button"
+                className="customer-order-again-refresh-btn"
+                onClick={() => void loadOrderHistory("refresh")}
+                disabled={isLoadingOrderHistory || isRefreshingOrderHistory}
+                aria-label="Refresh order again list"
+              >
+                <RefreshCw
+                  size={16}
+                  className={isRefreshingOrderHistory ? "spinning-icon" : undefined}
+                />
+              </button>
+            </div>
 
-            {isLoadingOrderHistory ? (
+            {isLoadingOrderHistory && recentOrders.length === 0 ? (
               <p className="customer-helper-text">Loading your recent orders...</p>
             ) : recentOrders.length === 0 ? (
               <div className="customer-empty-favorites-row">
@@ -343,32 +362,41 @@ export default function CustomerPage({
 
                   return (
                     <article className="customer-order-preview" key={order.id}>
-                      <div className="customer-order-hand">
-                        {orderCards.map((item, index) => (
-                          <div
-                            key={`${order.id}-${item.menuItemId}-${index}`}
-                            className="customer-hand-card"
-                            style={{
-                              left: useCardOffset ? `${index * 22}px` : "22px",
-                              zIndex: index + 1,
-                              transform: useCardOffset
-                                ? `rotate(${(index - 1) * 8}deg)`
-                                : "none",
-                            }}
-                          >
-                            <img
-                              src={
-                                item.imageUrl && /^https?:\/\//i.test(item.imageUrl)
-                                  ? item.imageUrl
-                                  : resolveMenuItemImage(item.name)
-                              }
-                              alt={item.name}
-                              className="customer-hand-image"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <p className="customer-order-date">{formatOrderDate(order.orderedAt)}</p>
+                      <button
+                        type="button"
+                        className="customer-order-preview-btn"
+                        onClick={() => onOrderAgain(order)}
+                      >
+                        <div className="customer-order-hand">
+                          {orderCards.map((item, index) => (
+                            <div
+                              key={`${order.id}-${item.menuItemId}-${index}`}
+                              className="customer-hand-card"
+                              style={{
+                                left: useCardOffset ? `${index * 22}px` : "22px",
+                                zIndex: index + 1,
+                                transform: useCardOffset
+                                  ? `rotate(${(index - 1) * 8}deg)`
+                                  : "none",
+                              }}
+                            >
+                              <img
+                                src={
+                                  item.imageUrl && /^https?:\/\//i.test(item.imageUrl)
+                                    ? item.imageUrl
+                                    : resolveMenuItemImage(item.name)
+                                }
+                                alt={item.name}
+                                className="customer-hand-image"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <p className="customer-order-date">{formatOrderDate(order.orderedAt)}</p>
+                        <p className="customer-order-status">
+                          {order.status ?? order.orderStatus ?? "Unknown"}
+                        </p>
+                      </button>
                     </article>
                   );
                 })}

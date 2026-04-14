@@ -471,6 +471,15 @@ export default function FastPickupScreen() {
     setPointsClaimedMessage(null);
   };
 
+  const handleOrderModalClose = () => {
+    const shouldReturnToLanding = orderModalStage === 'rewards';
+    hideOrderModal();
+
+    if (shouldReturnToLanding) {
+      router.replace('/(auth)/login');
+    }
+  };
+
   const startRewardCounterAnimation = (pointsToAdd: number) => {
     setRewardCounter(0);
 
@@ -1010,7 +1019,11 @@ export default function FastPickupScreen() {
         </View>
       </Modal>
 
-      <Modal visible={orderModalStage !== 'hidden'} transparent animationType="fade" onRequestClose={hideOrderModal}>
+      <Modal
+        visible={orderModalStage !== 'hidden'}
+        transparent
+        animationType="fade"
+        onRequestClose={handleOrderModalClose}>
         <View style={styles.orderModalOverlay}>
           <View style={styles.orderModalCard}>
             {orderModalStage === 'loading' ? (
@@ -1095,7 +1108,7 @@ export default function FastPickupScreen() {
 
                 <Pressable
                   style={({ pressed }) => [styles.rewardsCloseButton, pressed && styles.rewardsCloseButtonPressed]}
-                  onPress={hideOrderModal}>
+                  onPress={handleOrderModalClose}>
                   <ThemedText style={styles.rewardsCloseButtonText}>Close</ThemedText>
                 </Pressable>
               </View>

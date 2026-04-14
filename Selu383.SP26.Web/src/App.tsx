@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   Check,
+  CheckCircle2,
   ChevronsLeft,
   ChevronsRight,
   CircleUserRound,
@@ -51,6 +52,7 @@ import CustomerPage from "./customerpage";
 import EmployeeDashboard from "./EmployeeDashboard";
 import ReservationsModal, { type ReservationLoginPayload } from "./reservations";
 import MenuEditor from "./MenuEditor";
+import ReportsPage from "./ReportsPage";
 
 const menuItemImages: Record<string, string> = {
   "Iced Latte": icedLateImg,
@@ -368,6 +370,30 @@ type CartSummaryItem = {
   quantity: number;
 };
 
+type GuestOrderReplayItem = {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+type GuestOrderReplayDraft = {
+  locationId: number;
+  pickupType: "In Store" | "Drive Through";
+  paymentMethod: string;
+  total: number;
+  items: GuestOrderReplayItem[];
+};
+
+type CustomerOrderAgainItem = {
+  name: string;
+  quantity: number;
+};
+
+type CustomerOrderAgainPayload = {
+  id: number;
+  items: CustomerOrderAgainItem[];
+};
+
 type PolicyType = "terms" | "privacy" | null;
 
 const defaultApiBaseUrl = "";
@@ -413,6 +439,7 @@ const buildApiUrl = (path: string) =>
 
 const customerPagePath = "/customerpage";
 const employeeDashboardPath = "/dashboard";
+const reportsPath = "/reports";
 const legacyReservationsPath = "/reservations";
 
 const normalizePath = (path: string) => {
@@ -513,6 +540,9 @@ function App() {
     useState(false);
   const [rewardPointsEarned, setRewardPointsEarned] = useState(0);
   const [rewardCounter, setRewardCounter] = useState(0);
+  const [pendingGuestRewardPoints, setPendingGuestRewardPoints] = useState(0);
+  const [pendingGuestOrderDraft, setPendingGuestOrderDraft] =
+    useState<GuestOrderReplayDraft | null>(null);
   const [featuredMenuItems, setFeaturedMenuItems] = useState<MenuItem[]>(
     featuredDrinks,
   );
@@ -534,6 +564,7 @@ function App() {
   const isMenuEditorPage = currentPath === menuEditorPath;
   const isCustomerPage = currentPath === customerPagePath;
   const isEmployeeDashboardPage = currentPath === employeeDashboardPath;
+  const isReportsPage = currentPath === reportsPath;
   const isEmployeeOrAdmin =
     userRoles.some((role) => role.toLowerCase() === "employee") ||
     userRoles.some((role) => role.toLowerCase() === "admin");
@@ -544,11 +575,33 @@ function App() {
     ...savoryCrepeMenuItems,
     ...bagelMenuItems,
   ];
+  const featuredMenuItemNameKeys = new Set(
+    featuredMenuItems.map((item) =>
+      normalizeMenuItemName(item.name).toLowerCase(),
+    ),
+  );
+  const filterOutFeaturedItems = (items: MenuItem[]) =>
+    items.filter(
+      (item) =>
+        !featuredMenuItemNameKeys.has(
+          normalizeMenuItemName(item.name).toLowerCase(),
+        ),
+    );
+  const visibleDrinkMenuItems = filterOutFeaturedItems(drinkMenuItems);
+  const visibleSweetCrepeMenuItems = filterOutFeaturedItems(sweetCrepeMenuItems);
+  const visibleSavoryCrepeMenuItems = filterOutFeaturedItems(savoryCrepeMenuItems);
+  const visibleBagelMenuItems = filterOutFeaturedItems(bagelMenuItems);
 
   const displayMenuItemByName = new Map(
     displayMenuItems.map((item) => [
       item.name,
       { ...item, unitPrice: parsePrice(item.price) },
+    ]),
+  );
+  const displayMenuItemNameLookup = new Map(
+    displayMenuItems.map((item) => [
+      normalizeMenuItemName(item.name).toLowerCase(),
+      item.name,
     ]),
   );
 
@@ -1130,6 +1183,8 @@ function App() {
     setOrderSuccessMessageVisible(false);
     setRewardPointsEarned(0);
     setRewardCounter(0);
+    setPendingGuestRewardPoints(0);
+    setPendingGuestOrderDraft(null);
   };
 
   const handleKeepShopping = () => {
@@ -1177,9 +1232,58 @@ function App() {
     setOrderSuccessMessageVisible(false);
     setRewardPointsEarned(0);
     setRewardCounter(0);
+    setPendingGuestRewardPoints(0);
+    setPendingGuestOrderDraft(null);
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(true);
     void fetchLocations();
+  };
+
+  const openCheckoutSignInPrompt = () => {
+    setIsCheckoutModalOpen(false);
+    setLoginErrorMessage(null);
+    setIsUserMenuOpen(false);
+    setIsAuthPopupOpen(true);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
+  const openCheckoutSignUpPrompt = () => {
+    setIsCheckoutModalOpen(false);
+    openSignUpModal();
+  };
+
+  const handleOrderAgainFromCustomerPage = (order: CustomerOrderAgainPayload) => {
+    const orderAgainItemsByName: Record<string, number> = {};
+
+    order.items.forEach((item) => {
+      const normalizedName = normalizeMenuItemName(item.name).toLowerCase();
+      const catalogName = displayMenuItemNameLookup.get(normalizedName);
+      const quantity = Math.max(0, Math.floor(item.quantity));
+
+      if (!catalogName || quantity < 1) {
+        return;
+      }
+
+      orderAgainItemsByName[catalogName] =
+        (orderAgainItemsByName[catalogName] ?? 0) + quantity;
+    });
+
+    if (Object.keys(orderAgainItemsByName).length === 0) {
+      alert("No valid items were found for that previous order.");
+      return;
+    }
+
+    setCartItemsByName((previous) => {
+      const nextCartItemsByName = { ...previous };
+
+      Object.entries(orderAgainItemsByName).forEach(([name, quantity]) => {
+        nextCartItemsByName[name] = (nextCartItemsByName[name] ?? 0) + quantity;
+      });
+
+      return nextCartItemsByName;
+    });
+
+    openCheckoutModal();
   };
 
   const startRewardsCounterAnimation = (pointsToAdd: number) => {
@@ -1214,26 +1318,32 @@ function App() {
     }, 30);
   };
 
-  const applyRewardsFromOrder = async (pointsToAdd: number) => {
-    if (pointsToAdd <= 0 || currentUserId === null) {
+  const applyRewardsFromOrder = async (
+    pointsToAdd: number,
+    targetUserId: number | null = currentUserId,
+  ) => {
+    if (pointsToAdd <= 0 || targetUserId === null) {
       return;
     }
 
     try {
-      await fetch(buildApiUrl(`/api/users/${currentUserId}`), {
+      await fetch(buildApiUrl(`/api/users/${targetUserId}`), {
         credentials: "include",
       });
 
-      const response = await fetch(buildApiUrl(`/api/users/${currentUserId}/rewards`), {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        buildApiUrl(`/api/users/${targetUserId}/rewards`),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            pointsToAdd,
+          }),
         },
-        body: JSON.stringify({
-          pointsToAdd,
-        }),
-      });
+      );
 
       if (!response.ok) {
         return;
@@ -1263,11 +1373,27 @@ function App() {
 
     setIsSubmittingOrder(true);
     setOrderErrorMessage(null);
+    setPendingGuestRewardPoints(0);
+    setPendingGuestOrderDraft(null);
 
     try {
+      const isGuestCheckout = !loggedInUserName;
       const selectedPaymentOption = paymentMethodOptions.find(
         (option) => option.value === paymentMethod,
       );
+      const orderPayload: GuestOrderReplayDraft = {
+        locationId: Number(selectedLocationId),
+        pickupType,
+        paymentMethod: selectedPaymentOption?.label ?? paymentMethod,
+        total: Number(cartSubtotal.toFixed(2)),
+        items: cartSummaryItems.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice.toFixed(2)),
+        })),
+      };
+
+      let requiresAuthReplay = false;
 
       const response = await fetch(buildApiUrl("/api/orders"), {
         method: "POST",
@@ -1275,17 +1401,7 @@ function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          locationId: selectedLocationId,
-          pickupType,
-          paymentMethod: selectedPaymentOption?.label ?? paymentMethod,
-          total: Number(cartSubtotal.toFixed(2)),
-          items: cartSummaryItems.map((item) => ({
-            name: item.name,
-            quantity: item.quantity,
-            unitPrice: Number(item.unitPrice.toFixed(2)),
-          })),
-        }),
+        body: JSON.stringify(orderPayload),
       });
 
       if (!response.ok) {
@@ -1300,23 +1416,46 @@ function App() {
           // Keep fallback message when response parsing fails.
         }
 
-        throw new Error(message);
+        const isUnauthorizedResponse =
+          response.status === 401 ||
+          response.status === 403 ||
+          /unauthorized/i.test(message);
+
+        if (!(isGuestCheckout && isUnauthorizedResponse)) {
+          throw new Error(message);
+        }
+
+        requiresAuthReplay = true;
       }
 
       const pointsToAdd = calculateRewardPoints(cartSubtotal);
-      await applyRewardsFromOrder(pointsToAdd);
+      if (isGuestCheckout) {
+        if (requiresAuthReplay) {
+          setPendingGuestRewardPoints(pointsToAdd);
+          setPendingGuestOrderDraft(orderPayload);
+        } else {
+          setPendingGuestRewardPoints(0);
+          setPendingGuestOrderDraft(null);
+        }
+      } else {
+        await applyRewardsFromOrder(pointsToAdd);
+      }
       startRewardsCounterAnimation(pointsToAdd);
       setOrderSuccessMessageVisible(true);
 
-      if (closeCheckoutTimer.current !== null) {
-        window.clearTimeout(closeCheckoutTimer.current);
-      }
-
-      closeCheckoutTimer.current = window.setTimeout(() => {
+      if (isGuestCheckout) {
         clearCart();
-        closeCartAndCheckout();
-        closeCheckoutTimer.current = null;
-      }, rewardsCounterDurationMs + rewardsPopupHoldMs);
+      } else {
+        if (closeCheckoutTimer.current !== null) {
+          window.clearTimeout(closeCheckoutTimer.current);
+        }
+
+        closeCheckoutTimer.current = window.setTimeout(() => {
+          clearCart();
+          closeCartAndCheckout();
+          closeCheckoutTimer.current = null;
+        }, rewardsCounterDurationMs + rewardsPopupHoldMs);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Order failed";
       setOrderErrorMessage(message);
@@ -1368,6 +1507,8 @@ function App() {
 
     const user = (await response.json()) as AuthenticationUserDto;
     const nextRoles = user.roles ?? [];
+    const pendingGuestPoints = pendingGuestRewardPoints;
+    const pendingGuestOrder = pendingGuestOrderDraft;
 
     setLoggedInUserName(user.userName);
     setCurrentUserId(user.id);
@@ -1382,6 +1523,33 @@ function App() {
       (role) =>
         role.toLowerCase() === "employee" || role.toLowerCase() === "admin",
     );
+
+    if (pendingGuestOrder || pendingGuestPoints > 0) {
+      if (pendingGuestOrder) {
+        try {
+          await fetch(buildApiUrl("/api/orders"), {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(pendingGuestOrder),
+          });
+        } catch {
+          // Keep auth flow resilient even when replay order fails.
+        }
+      }
+
+      if (pendingGuestPoints > 0) {
+        await applyRewardsFromOrder(pendingGuestPoints, user.id);
+      }
+
+      setPendingGuestRewardPoints(0);
+      setPendingGuestOrderDraft(null);
+      closeCartAndCheckout();
+      navigateToPath(customerPagePath);
+      return user;
+    }
 
     if (isStaffUser) {
       navigateToPath(employeeDashboardPath);
@@ -1725,6 +1893,7 @@ function App() {
           featuredItems={featuredMenuItems}
           isInCart={isInCart}
           onToggleCartItem={toggleCartItem}
+          onOrderAgain={handleOrderAgainFromCustomerPage}
           buildApiUrl={buildApiUrl}
           resolveMenuItemImage={(itemName) =>
             menuItemImages[normalizeMenuItemName(itemName)] ?? logo
@@ -1733,27 +1902,32 @@ function App() {
       ) : null}
 
       {isEmployeeDashboardPage && isEmployeeOrAdmin ? (
-  <EmployeeDashboard
-    userName={loggedInUserName ?? "Staff"}
-    roles={userRoles}
-    buildApiUrl={buildApiUrl}
-    onOpenMenuEditor={() => navigateToPath(menuEditorPath)}
-  />
-) : null}
+        <EmployeeDashboard
+          roles={userRoles}
+          buildApiUrl={buildApiUrl}
+          onOpenMenuEditor={() => navigateToPath(menuEditorPath)}
+          onOpenReports={() => navigateToPath(reportsPath)}
+        />
+      ) : null}
 
-{isMenuEditorPage && isEmployeeOrAdmin ? (
-  <MenuEditor
-    buildApiUrl={buildApiUrl}
-    onBack={() => navigateToPath(employeeDashboardPath)}
-  />
-) : null}
+      {isMenuEditorPage && isEmployeeOrAdmin ? (
+        <MenuEditor
+          buildApiUrl={buildApiUrl}
+          onBack={() => navigateToPath(employeeDashboardPath)}
+        />
+      ) : null}
+
+      {isReportsPage && isEmployeeOrAdmin ? (
+        <ReportsPage onBack={() => navigateToPath(employeeDashboardPath)} />
+      ) : null}
 
       <main
         style={{
           display:
         isCustomerPage ||
         (isEmployeeDashboardPage && isEmployeeOrAdmin) ||
-        (isMenuEditorPage && isEmployeeOrAdmin)
+        (isMenuEditorPage && isEmployeeOrAdmin) ||
+        (isReportsPage && isEmployeeOrAdmin)
           ? "none"
           : undefined,
         }}
@@ -1887,73 +2061,81 @@ function App() {
           </div>
         </section>
 
-        <section className="menu-section" id="drinks">
-          <div className="section-heading">
-            <p className="section-label">Drinks</p>
-            <h2>Handcrafted favorites</h2>
-          </div>
-          <div className="menu-grid">
-            {drinkMenuItems.map((item) => (
-              <MenuCard
-                key={item.name}
-                item={item}
-                isSelected={isInCart(item.name)}
-                onToggle={toggleCartItem}
-              />
-            ))}
-          </div>
-        </section>
+        {visibleDrinkMenuItems.length > 0 ? (
+          <section className="menu-section" id="drinks">
+            <div className="section-heading">
+              <p className="section-label">Drinks</p>
+              <h2>Handcrafted favorites</h2>
+            </div>
+            <div className="menu-grid">
+              {visibleDrinkMenuItems.map((item) => (
+                <MenuCard
+                  key={item.name}
+                  item={item}
+                  isSelected={isInCart(item.name)}
+                  onToggle={toggleCartItem}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        <section className="menu-section" id="food">
-          <div className="section-heading">
-            <p className="section-label">Sweet Crepes</p>
-            <h2>Sweet, warm, and indulgent</h2>
-          </div>
-          <div className="menu-grid">
-            {sweetCrepeMenuItems.map((item) => (
-              <MenuCard
-                key={item.name}
-                item={item}
-                isSelected={isInCart(item.name)}
-                onToggle={toggleCartItem}
-              />
-            ))}
-          </div>
-        </section>
+        {visibleSweetCrepeMenuItems.length > 0 ? (
+          <section className="menu-section" id="food">
+            <div className="section-heading">
+              <p className="section-label">Sweet Crepes</p>
+              <h2>Sweet, warm, and indulgent</h2>
+            </div>
+            <div className="menu-grid">
+              {visibleSweetCrepeMenuItems.map((item) => (
+                <MenuCard
+                  key={item.name}
+                  item={item}
+                  isSelected={isInCart(item.name)}
+                  onToggle={toggleCartItem}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        <section className="menu-section">
-          <div className="section-heading">
-            <p className="section-label">Savory Crepes</p>
-            <h2>Fresh and filling choices</h2>
-          </div>
-          <div className="menu-grid">
-            {savoryCrepeMenuItems.map((item) => (
-              <MenuCard
-                key={item.name}
-                item={item}
-                isSelected={isInCart(item.name)}
-                onToggle={toggleCartItem}
-              />
-            ))}
-          </div>
-        </section>
+        {visibleSavoryCrepeMenuItems.length > 0 ? (
+          <section className="menu-section">
+            <div className="section-heading">
+              <p className="section-label">Savory Crepes</p>
+              <h2>Fresh and filling choices</h2>
+            </div>
+            <div className="menu-grid">
+              {visibleSavoryCrepeMenuItems.map((item) => (
+                <MenuCard
+                  key={item.name}
+                  item={item}
+                  isSelected={isInCart(item.name)}
+                  onToggle={toggleCartItem}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        <section className="menu-section">
-          <div className="section-heading">
-            <p className="section-label">Bagels</p>
-            <h2>Toasted classics and specialties</h2>
-          </div>
-          <div className="menu-grid">
-            {bagelMenuItems.map((item) => (
-              <MenuCard
-                key={item.name}
-                item={item}
-                isSelected={isInCart(item.name)}
-                onToggle={toggleCartItem}
-              />
-            ))}
-          </div>
-        </section>
+        {visibleBagelMenuItems.length > 0 ? (
+          <section className="menu-section">
+            <div className="section-heading">
+              <p className="section-label">Bagels</p>
+              <h2>Toasted classics and specialties</h2>
+            </div>
+            <div className="menu-grid">
+              {visibleBagelMenuItems.map((item) => (
+                <MenuCard
+                  key={item.name}
+                  item={item}
+                  isSelected={isInCart(item.name)}
+                  onToggle={toggleCartItem}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="about" id="about">
           <div className="about-box">
@@ -2329,7 +2511,15 @@ function App() {
 
             {orderSuccessMessageVisible ? (
               <div className="checkout-success">
-                <h3>Contrats! you earned rewards points!</h3>
+                <CheckCircle2
+                  size={68}
+                  strokeWidth={2.25}
+                  className="checkout-success-icon"
+                />
+                <h3>Order placed successfully</h3>
+                <p className="checkout-success-copy">
+                  Congrats! You earned reward points.
+                </p>
                 <div
                   className="rewards-wheel"
                   style={{
@@ -2341,6 +2531,31 @@ function App() {
                   </div>
                 </div>
                 <p className="rewards-earned">+{rewardPointsEarned} points</p>
+                {!loggedInUserName && pendingGuestRewardPoints > 0 ? (
+                  <div className="checkout-auth-gate checkout-claim-gate">
+                    <h3>Sign in or sign up to claim your points</h3>
+                    <p>
+                      Complete sign in or create an account and we will apply{" "}
+                      {pendingGuestRewardPoints} points to your profile.
+                    </p>
+                    <div className="checkout-auth-actions">
+                      <button
+                        type="button"
+                        className="primary-btn checkout-auth-btn"
+                        onClick={openCheckoutSignInPrompt}
+                      >
+                        Sign In
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn checkout-auth-btn"
+                        onClick={openCheckoutSignUpPrompt}
+                      >
+                        Sign Up
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>

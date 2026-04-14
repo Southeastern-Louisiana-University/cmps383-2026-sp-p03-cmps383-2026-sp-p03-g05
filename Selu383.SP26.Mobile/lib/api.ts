@@ -79,6 +79,8 @@ export type OrderHistoryDto = {
   id: number;
   orderedAt: string;
   total: number;
+  status?: string;
+  orderStatus?: string;
   items: OrderItemDto[];
 };
 

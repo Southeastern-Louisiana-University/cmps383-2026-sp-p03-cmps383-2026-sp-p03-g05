@@ -42,3 +42,44 @@ public class UpdateOrderStatusDto
 {
     public string Status { get; set; } = string.Empty;
 }
+
+public class StaffOrderDto
+{
+    public int OrderNumber { get; set; }
+    public DateTime OrderedAt { get; set; }
+    public int ItemCount { get; set; }
+    public string LastName { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+    public string PickupMethod { get; set; } = string.Empty;
+    public string OrderStatus { get; set; } = string.Empty;
+}
+
+public class StaffOrderDetailItemDto
+{
+    public int MenuItemId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+}
+
+public class StaffOrderDetailDto
+{
+    public int OrderNumber { get; set; }
+    public DateTime OrderedAt { get; set; }
+    public string LastName { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+    public string PickupMethod { get; set; } = string.Empty;
+    public string OrderStatus { get; set; } = string.Empty;
+    public decimal Total { get; set; }
+    public List<StaffOrderDetailItemDto> Items { get; set; } = [];
+}
+
+public class CurrentOrderCountsDto
+{
+    public int InStoreCount { get; set; }
+    public int DriveThroughCount { get; set; }
+}

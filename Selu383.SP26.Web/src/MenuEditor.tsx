@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Gauge, Pencil, Plus, Trash2 } from "lucide-react";
 
 type MenuEditorProps = {
   buildApiUrl: (path: string) => string;
@@ -36,6 +37,56 @@ const emptyForm: MenuItemFormState = {
   imageUrl: "",
 };
 
+const menuImageModules = import.meta.glob("./assets/*.{png,jpg,jpeg,webp,avif}", {
+  eager: true,
+  import: "default",
+}) as Record<string, string>;
+
+function normalizeImageKey(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, " and ")
+    .replace(/['\u2019]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+const fileImageMap = Object.entries(menuImageModules).reduce<Record<string, string>>(
+  (accumulator, [modulePath, url]) => {
+    const fileName = modulePath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
+    accumulator[normalizeImageKey(fileName)] = url;
+    return accumulator;
+  },
+  {},
+);
+
+const menuImageAliases: Record<string, string> = {
+  [normalizeImageKey("Black & White Cold Brew")]: normalizeImageKey(
+    "black white cold brew",
+  ),
+  [normalizeImageKey("Farmers Market Crepe")]: normalizeImageKey("farmers market"),
+  [normalizeImageKey("Creme Brulagel")]: normalizeImageKey("creme brulagle"),
+  [normalizeImageKey("Cr\u00E8me Brulagel")]: normalizeImageKey("creme brulagle"),
+  [normalizeImageKey("Cr\u00C3\u00A8me Brulagel")]: normalizeImageKey("creme brulagle"),
+  [normalizeImageKey("Cr\u00C3\u0192\u00C2\u00A8me Brulagel")]:
+    normalizeImageKey("creme brulagle"),
+  [normalizeImageKey("The Fancy One")]: normalizeImageKey("fancy one"),
+  [normalizeImageKey("The Classic")]: normalizeImageKey("classic"),
+};
+
+function resolveMenuItemImage(itemName: string, imageUrl?: string): string {
+  const directUrl = imageUrl?.trim();
+  if (directUrl) {
+    return directUrl;
+  }
+
+  const key = normalizeImageKey(itemName);
+  const aliasKey = menuImageAliases[key] ?? key;
+  return fileImageMap[aliasKey] ?? "";
+}
+
 export default function MenuEditor({
   buildApiUrl,
   onBack,
@@ -46,6 +97,7 @@ export default function MenuEditor({
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [form, setForm] = useState<MenuItemFormState>(emptyForm);
 
   const loadMenuItems = async () => {
@@ -115,6 +167,7 @@ export default function MenuEditor({
     setForm(emptyForm);
     setError("");
     setSuccessMessage("");
+    setIsFormModalOpen(true);
   };
 
   const startEdit = (item: MenuEditorItem) => {
@@ -130,14 +183,14 @@ export default function MenuEditor({
     });
     setError("");
     setSuccessMessage("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setIsFormModalOpen(true);
   };
 
   const cancelEdit = () => {
+    setIsFormModalOpen(false);
     setEditingId(null);
     setForm(emptyForm);
     setError("");
-    setSuccessMessage("");
   };
 
   const handleSave = async () => {
@@ -196,6 +249,7 @@ export default function MenuEditor({
       setSuccessMessage(
         editingId === null ? "Menu item added." : "Menu item updated.",
       );
+      setIsFormModalOpen(false);
       setEditingId(null);
       setForm(emptyForm);
       await loadMenuItems();
@@ -242,167 +296,40 @@ export default function MenuEditor({
     }
   };
 
+  const previewImageUrl = form.imageUrl.trim() || resolveMenuItemImage(form.itemName);
+
   return (
     <main className="menu-editor-page">
       <section className="menu-editor-header-card">
         <div>
           <h1>Menu Editor</h1>
           <p>Manage menu items, pictures, descriptions, and nutrition info.</p>
-        </div>
 
-        <div className="menu-editor-header-actions">
-          <button
-            type="button"
-            className="employee-tool-btn"
-            onClick={startAddNew}
-          >
-            Add New Item
-          </button>
-          <button
-            type="button"
-            className="employee-tool-btn"
-            onClick={onBack}
-          >
-            Back to Dashboard
-          </button>
+          <div className="menu-editor-header-actions">
+            <button
+              type="button"
+              className="employee-tool-btn menu-editor-header-btn"
+              onClick={startAddNew}
+            >
+              <Plus size={16} />
+              Add New Item
+            </button>
+            <button
+              type="button"
+              className="employee-tool-btn menu-editor-header-btn"
+              onClick={onBack}
+            >
+              <Gauge size={16} />
+              Return to Dashboard
+            </button>
+          </div>
         </div>
       </section>
 
-      <section className="menu-editor-layout">
-        <article className="menu-editor-form-card">
-          <div className="menu-editor-form-header">
-            <div>
-              <h2>{editingId === null ? "Add Menu Item" : "Edit Menu Item"}</h2>
-              <p>
-                Add pricing, description, picture URL, and nutritional facts.
-              </p>
-            </div>
-          </div>
+      {!isFormModalOpen && error ? <p className="menu-editor-error">{error}</p> : null}
+      {successMessage ? <p className="menu-editor-success">{successMessage}</p> : null}
 
-          <div className="menu-editor-form-grid">
-            <label className="menu-editor-field">
-              <span>Item Name</span>
-              <input
-                type="text"
-                value={form.itemName}
-                onChange={(event) => updateForm("itemName", event.target.value)}
-                placeholder="Iced Latte"
-              />
-            </label>
-
-            <label className="menu-editor-field">
-              <span>Type</span>
-              <select
-                value={form.type}
-                onChange={(event) => updateForm("type", event.target.value)}
-              >
-                <option value="Drink">Drink</option>
-                <option value="Food">Food</option>
-              </select>
-            </label>
-
-            <label className="menu-editor-field">
-              <span>Price</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.price}
-                onChange={(event) => updateForm("price", event.target.value)}
-                placeholder="5.50"
-              />
-            </label>
-
-            <label className="menu-editor-field menu-editor-checkbox-field">
-              <span>Featured Item</span>
-              <div className="menu-editor-checkbox-wrap">
-                <input
-                  type="checkbox"
-                  checked={form.featured}
-                  onChange={(event) =>
-                    updateForm("featured", event.target.checked)
-                  }
-                />
-                <small>Show in featured section</small>
-              </div>
-            </label>
-
-            <label className="menu-editor-field menu-editor-field-full">
-              <span>Picture URL</span>
-              <input
-                type="text"
-                value={form.imageUrl}
-                onChange={(event) => updateForm("imageUrl", event.target.value)}
-                placeholder="https://example.com/image.png"
-              />
-            </label>
-
-            <label className="menu-editor-field menu-editor-field-full">
-              <span>Description</span>
-              <textarea
-                rows={4}
-                value={form.description}
-                onChange={(event) =>
-                  updateForm("description", event.target.value)
-                }
-                placeholder="Short item description..."
-              />
-            </label>
-
-            <label className="menu-editor-field menu-editor-field-full">
-              <span>Nutritional Facts</span>
-              <textarea
-                rows={5}
-                value={form.nutrition}
-                onChange={(event) =>
-                  updateForm("nutrition", event.target.value)
-                }
-                placeholder="Calories, sugar, protein, allergens, etc."
-              />
-            </label>
-          </div>
-
-          {form.imageUrl ? (
-            <div className="menu-editor-image-preview-wrap">
-              <p>Image Preview</p>
-              <img
-                src={form.imageUrl}
-                alt={form.itemName || "Menu preview"}
-                className="menu-editor-image-preview"
-              />
-            </div>
-          ) : null}
-
-          {error ? <p className="menu-editor-error">{error}</p> : null}
-          {successMessage ? (
-            <p className="menu-editor-success">{successMessage}</p>
-          ) : null}
-
-          <div className="menu-editor-form-actions">
-            <button
-              type="button"
-              className="employee-tool-btn"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              {saving
-                ? "Saving..."
-                : editingId === null
-                  ? "Add Item"
-                  : "Save Changes"}
-            </button>
-
-            <button
-              type="button"
-              className="employee-clear-btn"
-              onClick={cancelEdit}
-              disabled={saving}
-            >
-              Clear
-            </button>
-          </div>
-        </article>
-
+      <section className="menu-editor-list-layout">
         <article className="menu-editor-list-card">
           <div className="menu-editor-list-header">
             <h2>Current Menu Items</h2>
@@ -412,65 +339,231 @@ export default function MenuEditor({
           {loading ? <p>Loading menu items...</p> : null}
 
           <div className="menu-editor-card-grid">
-            {sortedItems.map((item) => (
-              <article className="menu-editor-item-card" key={item.id}>
-                <div className="menu-editor-item-card-top">
-                  <div>
-                    <h3>{item.itemName}</h3>
-                    <p className="menu-editor-item-type">{item.type}</p>
+            {sortedItems.map((item) => {
+              const resolvedImageUrl = resolveMenuItemImage(
+                item.itemName,
+                item.imageUrl,
+              );
+
+              return (
+                <article className="menu-editor-item-card" key={item.id}>
+                  <div className="menu-editor-item-card-top">
+                    <div>
+                      <h3>{item.itemName}</h3>
+                      <p className="menu-editor-item-type">{item.type}</p>
+                    </div>
+
+                    <span className="menu-editor-item-price">
+                      ${item.price.toFixed(2)}
+                    </span>
                   </div>
 
-                  <span className="menu-editor-item-price">
-                    ${item.price.toFixed(2)}
-                  </span>
-                </div>
+                  {resolvedImageUrl ? (
+                    <img
+                      src={resolvedImageUrl}
+                      alt={item.itemName}
+                      className="menu-editor-item-image"
+                    />
+                  ) : (
+                    <div className="menu-editor-item-image-placeholder">
+                      No Image
+                    </div>
+                  )}
 
-                {item.imageUrl ? (
-                  <img
-                    src={item.imageUrl}
-                    alt={item.itemName}
-                    className="menu-editor-item-image"
-                  />
-                ) : (
-                  <div className="menu-editor-item-image-placeholder">
-                    No Image
+                  <div className="menu-editor-item-details">
+                    <p>
+                      <strong>Featured:</strong> {item.featured ? "Yes" : "No"}
+                    </p>
+                    <p>
+                      <strong>Description:</strong> {item.description || "N/A"}
+                    </p>
+                    <p>
+                      <strong>Nutrition:</strong> {item.nutrition || "N/A"}
+                    </p>
                   </div>
-                )}
 
-                <div className="menu-editor-item-details">
-                  <p>
-                    <strong>Featured:</strong> {item.featured ? "Yes" : "No"}
-                  </p>
-                  <p>
-                    <strong>Description:</strong> {item.description || "N/A"}
-                  </p>
-                  <p>
-                    <strong>Nutrition:</strong> {item.nutrition || "N/A"}
-                  </p>
-                </div>
+                  <div className="menu-editor-item-actions">
+                    <button
+                      type="button"
+                      className="menu-editor-edit-btn"
+                      onClick={() => startEdit(item)}
+                      aria-label={`Edit ${item.itemName}`}
+                      title={`Edit ${item.itemName}`}
+                    >
+                      <Pencil size={16} />
+                    </button>
 
-                <div className="menu-editor-item-actions">
-                  <button
-                    type="button"
-                    className="employee-tool-btn"
-                    onClick={() => startEdit(item)}
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    type="button"
-                    className="employee-clear-btn"
-                    onClick={() => void handleDelete(item.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </article>
-            ))}
+                    <button
+                      type="button"
+                      className="menu-editor-delete-btn"
+                      onClick={() => void handleDelete(item.id)}
+                      aria-label={`Delete ${item.itemName}`}
+                      title={`Delete ${item.itemName}`}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </article>
       </section>
+
+      {isFormModalOpen ? (
+        <div
+          className="menu-editor-modal-overlay"
+          role="presentation"
+          onClick={cancelEdit}
+        >
+          <div
+            className="menu-editor-modal-shell"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <article className="menu-editor-form-card menu-editor-modal-card">
+              <div className="menu-editor-form-header">
+                <div>
+                  <h2>{editingId === null ? "Add Menu Item" : "Edit Menu Item"}</h2>
+                  <p>
+                    Add pricing, description, picture URL, and nutritional facts.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="menu-editor-modal-close"
+                  onClick={cancelEdit}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="menu-editor-form-grid">
+                <label className="menu-editor-field">
+                  <span>Item Name</span>
+                  <input
+                    type="text"
+                    value={form.itemName}
+                    onChange={(event) => updateForm("itemName", event.target.value)}
+                    placeholder="Iced Latte"
+                  />
+                </label>
+
+                <label className="menu-editor-field">
+                  <span>Type</span>
+                  <select
+                    value={form.type}
+                    onChange={(event) => updateForm("type", event.target.value)}
+                  >
+                    <option value="Drink">Drink</option>
+                    <option value="Food">Food</option>
+                  </select>
+                </label>
+
+                <label className="menu-editor-field">
+                  <span>Price</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.price}
+                    onChange={(event) => updateForm("price", event.target.value)}
+                    placeholder="5.50"
+                  />
+                </label>
+
+                <label className="menu-editor-field menu-editor-checkbox-field">
+                  <span>Featured Item</span>
+                  <div className="menu-editor-checkbox-wrap">
+                    <input
+                      type="checkbox"
+                      checked={form.featured}
+                      onChange={(event) =>
+                        updateForm("featured", event.target.checked)
+                      }
+                    />
+                    <small>Show in featured section</small>
+                  </div>
+                </label>
+
+                <label className="menu-editor-field menu-editor-field-full">
+                  <span>Picture URL</span>
+                  <input
+                    type="text"
+                    value={form.imageUrl}
+                    onChange={(event) => updateForm("imageUrl", event.target.value)}
+                    placeholder="https://example.com/image.png"
+                  />
+                </label>
+
+                <label className="menu-editor-field menu-editor-field-full">
+                  <span>Description</span>
+                  <textarea
+                    rows={4}
+                    value={form.description}
+                    onChange={(event) =>
+                      updateForm("description", event.target.value)
+                    }
+                    placeholder="Short item description..."
+                  />
+                </label>
+
+                <label className="menu-editor-field menu-editor-field-full">
+                  <span>Nutritional Facts</span>
+                  <textarea
+                    rows={5}
+                    value={form.nutrition}
+                    onChange={(event) =>
+                      updateForm("nutrition", event.target.value)
+                    }
+                    placeholder="Calories, sugar, protein, allergens, etc."
+                  />
+                </label>
+              </div>
+
+              {previewImageUrl ? (
+                <div className="menu-editor-image-preview-wrap">
+                  <p>Image Preview</p>
+                  <img
+                    src={previewImageUrl}
+                    alt={form.itemName || "Menu preview"}
+                    className="menu-editor-image-preview"
+                  />
+                </div>
+              ) : null}
+
+              {error ? <p className="menu-editor-error">{error}</p> : null}
+              {successMessage ? (
+                <p className="menu-editor-success">{successMessage}</p>
+              ) : null}
+
+              <div className="menu-editor-form-actions">
+                <button
+                  type="button"
+                  className="employee-tool-btn"
+                  onClick={handleSave}
+                  disabled={saving}
+                >
+                  {saving
+                    ? "Saving..."
+                    : editingId === null
+                      ? "Add Item"
+                      : "Save Changes"}
+                </button>
+
+                <button
+                  type="button"
+                  className="employee-clear-btn"
+                  onClick={cancelEdit}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+              </div>
+            </article>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

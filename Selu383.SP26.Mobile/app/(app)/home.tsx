@@ -1,12 +1,13 @@
 import { Image } from 'expo-image';
-import { HeartOff, Square, SquareCheck } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { HeartOff, RefreshCw, Square, SquareCheck } from 'lucide-react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/auth-context';
 import { useCart } from '@/context/cart-context';
+import { useCheckoutFlow } from '@/context/checkout-flow-context';
 import { BrandColors } from '@/constants/theme';
 import { locationsApi, menuItemsApi, ordersApi, reservationsApi, usersApi, type OrderHistoryDto, type OrderItemDto } from '@/lib/api';
 
@@ -87,6 +88,10 @@ function resolveFavoriteImage(item: OrderItemDto) {
   return require('@/assets/images/logo-round.png');
 }
 
+function resolveOrderAgainCartImage(item: OrderItemDto) {
+  return favoriteImageByName[item.name] ?? require('@/assets/images/logo-round.png');
+}
+
 function formatOrderDate(dateText: string) {
   const parsed = new Date(dateText);
   if (Number.isNaN(parsed.getTime())) {
@@ -136,12 +141,14 @@ function formatReservationDateTime(dateValue: Date) {
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { isInCart, toggleCartItem } = useCart();
+  const { isInCart, toggleCartItem, replaceCart, cartItems } = useCart();
+  const { openCheckout } = useCheckoutFlow();
   const [pridePoints, setPridePoints] = useState(user?.pridePoints ?? 0);
   const completedLevels = getCompletedLevels(pridePoints);
 
   const [recentOrders, setRecentOrders] = useState<OrderHistoryDto[]>([]);
   const [isLoadingOrderHistory, setIsLoadingOrderHistory] = useState(false);
+  const [isRefreshingOrderHistory, setIsRefreshingOrderHistory] = useState(false);
   const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>(fallbackFeaturedItems);
   const [upcomingReservations, setUpcomingReservations] = useState<UpcomingReservation[]>([]);
   const [isLoadingUpcomingReservations, setIsLoadingUpcomingReservations] = useState(false);
@@ -177,37 +184,62 @@ export default function HomeScreen() {
     };
   }, [user?.id]);
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadOrderHistory = useCallback(
+    async (mode: 'initial' | 'refresh' = 'initial') => {
+      if (mode === 'initial') {
+        setIsLoadingOrderHistory(true);
+      } else {
+        setIsRefreshingOrderHistory(true);
+      }
 
-    const loadOrderHistory = async () => {
-      setIsLoadingOrderHistory(true);
       try {
         const orderHistory = await ordersApi.history();
-        if (!isMounted) {
-          return;
-        }
-
         setRecentOrders(orderHistory.slice(0, 3));
       } catch {
-        if (!isMounted) {
-          return;
+        if (mode === 'initial') {
+          setRecentOrders([]);
         }
-
-        setRecentOrders([]);
       } finally {
-        if (isMounted) {
+        if (mode === 'initial') {
           setIsLoadingOrderHistory(false);
+        } else {
+          setIsRefreshingOrderHistory(false);
         }
       }
-    };
+    },
+    []
+  );
 
-    void loadOrderHistory();
+  useEffect(() => {
+    void loadOrderHistory('initial');
+  }, [loadOrderHistory]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const handleOrderAgain = (order: OrderHistoryDto) => {
+    const reorderedItems = order.items
+      .map((item) => ({
+        key: item.name,
+        name: item.name,
+        unitPrice: item.unitPrice,
+        image: resolveOrderAgainCartImage(item),
+        quantity: Math.max(0, Math.floor(item.quantity)),
+      }))
+      .filter((item) => item.key && item.quantity > 0);
+
+    if (reorderedItems.length === 0) {
+      return;
+    }
+
+    const existingCartItems = cartItems.map((item) => ({
+      key: item.key,
+      name: item.name,
+      unitPrice: item.unitPrice,
+      image: item.image,
+      quantity: item.quantity,
+    }));
+
+    replaceCart([...existingCartItems, ...reorderedItems]);
+    openCheckout();
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -342,11 +374,29 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.card}>
-          <ThemedText type="defaultSemiBold" style={styles.cardTitle}>
-            ORDER AGAIN!
-          </ThemedText>
+          <View style={styles.orderAgainHeader}>
+            <ThemedText type="defaultSemiBold" style={[styles.cardTitle, styles.orderAgainTitle]}>
+              ORDER AGAIN!
+            </ThemedText>
+            <Pressable
+              style={({ pressed }) => [
+                styles.orderAgainRefreshButton,
+                pressed && styles.orderAgainRefreshButtonPressed,
+                (isLoadingOrderHistory || isRefreshingOrderHistory) && styles.orderAgainRefreshButtonDisabled,
+              ]}
+              onPress={() => void loadOrderHistory('refresh')}
+              disabled={isLoadingOrderHistory || isRefreshingOrderHistory}
+              accessibilityRole="button"
+              accessibilityLabel="Refresh order again list">
+              {isRefreshingOrderHistory ? (
+                <ActivityIndicator size="small" color={BrandColors.primary} />
+              ) : (
+                <RefreshCw color={BrandColors.primary} size={16} />
+              )}
+            </Pressable>
+          </View>
 
-          {isLoadingOrderHistory ? (
+          {isLoadingOrderHistory && recentOrders.length === 0 ? (
             <ThemedText style={styles.helperText}>Loading your recent orders...</ThemedText>
           ) : recentOrders.length === 0 ? (
             <View style={styles.emptyFavoritesRow}>
@@ -363,23 +413,30 @@ export default function HomeScreen() {
                 const useCardOffset = orderCards.length > 1;
                 return (
                   <View key={order.id} style={styles.orderAgainContent}>
-                    <View style={styles.orderHand}>
-                      {orderCards.map((item, index) => (
-                        <View
-                          key={`${order.id}-${item.name}-${index}`}
-                          style={[
-                            styles.handCard,
-                            {
-                              left: useCardOffset ? index * 20 : 20,
-                              zIndex: index + 1,
-                              transform: [{ rotate: useCardOffset ? `${(index - 1) * 8}deg` : '0deg' }],
-                            },
-                          ]}>
-                          <Image source={resolveFavoriteImage(item)} style={styles.handImage} contentFit="cover" />
-                        </View>
-                      ))}
-                    </View>
-                    <ThemedText style={styles.orderDateText}>{formatOrderDate(order.orderedAt)}</ThemedText>
+                    <Pressable
+                      style={({ pressed }) => [styles.orderAgainButton, pressed && styles.orderAgainButtonPressed]}
+                      onPress={() => handleOrderAgain(order)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Order again from ${formatOrderDate(order.orderedAt)}`}>
+                      <View style={styles.orderHand}>
+                        {orderCards.map((item, index) => (
+                          <View
+                            key={`${order.id}-${item.name}-${index}`}
+                            style={[
+                              styles.handCard,
+                              {
+                                left: useCardOffset ? index * 20 : 20,
+                                zIndex: index + 1,
+                                transform: [{ rotate: useCardOffset ? `${(index - 1) * 8}deg` : '0deg' }],
+                              },
+                            ]}>
+                            <Image source={resolveFavoriteImage(item)} style={styles.handImage} contentFit="cover" />
+                          </View>
+                        ))}
+                      </View>
+                      <ThemedText style={styles.orderDateText}>{formatOrderDate(order.orderedAt)}</ThemedText>
+                      <ThemedText style={styles.orderStatusText}>{order.status ?? order.orderStatus ?? 'Unknown'}</ThemedText>
+                    </Pressable>
                   </View>
                 );
               })}
@@ -482,6 +539,31 @@ const styles = StyleSheet.create({
     color: BrandColors.darkAccent,
     marginBottom: 10,
   },
+  orderAgainHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  orderAgainTitle: {
+    marginBottom: 0,
+  },
+  orderAgainRefreshButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    backgroundColor: '#fffdf9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orderAgainRefreshButtonPressed: {
+    opacity: 0.82,
+  },
+  orderAgainRefreshButtonDisabled: {
+    opacity: 0.65,
+  },
   progressTrack: {
     flexDirection: 'row',
     gap: 6,
@@ -533,6 +615,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 2,
   },
+  orderAgainButton: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  orderAgainButtonPressed: {
+    opacity: 0.8,
+  },
   recentOrdersList: {
     width: '100%',
     flexDirection: 'row',
@@ -573,6 +662,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     lineHeight: 13,
+  },
+  orderStatusText: {
+    marginTop: 1,
+    color: BrandColors.darkAccent,
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   featuredItemsRow: {
     flexDirection: 'row',

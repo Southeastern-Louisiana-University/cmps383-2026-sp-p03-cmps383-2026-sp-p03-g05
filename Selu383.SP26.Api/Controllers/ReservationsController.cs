@@ -42,6 +42,9 @@ public class ReservationsController(DataContext dataContext) : ControllerBase
             {
                 Id = x.Id,
                 UserId = x.UserId,
+                UserName = x.User.UserName ?? string.Empty,
+                FirstName = x.User.FirstName,
+                LastName = x.User.LastName,
                 OrderId = x.OrderId,
                 TableId = x.TableId,
                 LocationId = x.LocationId,
@@ -109,6 +112,7 @@ public class ReservationsController(DataContext dataContext) : ControllerBase
     {
         var reservation = await dataContext.Set<Reservation>()
             .AsNoTracking()
+            .Include(x => x.User)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (reservation == null)
@@ -209,7 +213,25 @@ public class ReservationsController(DataContext dataContext) : ControllerBase
         await dataContext.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = reservation.Id }, ToDto(reservation));
+        var reservationUser = await dataContext.Set<User>()
+            .AsNoTracking()
+            .Where(x => x.Id == reservation.UserId)
+            .Select(x => new
+            {
+                x.UserName,
+                x.FirstName,
+                x.LastName,
+            })
+            .FirstOrDefaultAsync();
+
+        return CreatedAtAction(
+            nameof(GetById),
+            new { id = reservation.Id },
+            ToDto(
+                reservation,
+                reservationUser?.UserName,
+                reservationUser?.FirstName,
+                reservationUser?.LastName));
     }
 
     [HttpPut("{id:int}")]
@@ -303,7 +325,22 @@ public class ReservationsController(DataContext dataContext) : ControllerBase
         await dataContext.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        return Ok(ToDto(reservation));
+        var reservationUser = await dataContext.Set<User>()
+            .AsNoTracking()
+            .Where(x => x.Id == reservation.UserId)
+            .Select(x => new
+            {
+                x.UserName,
+                x.FirstName,
+                x.LastName,
+            })
+            .FirstOrDefaultAsync();
+
+        return Ok(ToDto(
+            reservation,
+            reservationUser?.UserName,
+            reservationUser?.FirstName,
+            reservationUser?.LastName));
     }
 
     [HttpDelete("{id:int}")]
@@ -422,12 +459,23 @@ public class ReservationsController(DataContext dataContext) : ControllerBase
         return null;
     }
 
-    private static ReservationDto ToDto(Reservation reservation)
+    private static ReservationDto ToDto(
+        Reservation reservation,
+        string? userName = null,
+        string? firstName = null,
+        string? lastName = null)
     {
+        var resolvedUserName = userName ?? reservation.User?.UserName ?? string.Empty;
+        var resolvedFirstName = firstName ?? reservation.User?.FirstName ?? string.Empty;
+        var resolvedLastName = lastName ?? reservation.User?.LastName ?? string.Empty;
+
         return new ReservationDto
         {
             Id = reservation.Id,
             UserId = reservation.UserId,
+            UserName = resolvedUserName,
+            FirstName = resolvedFirstName,
+            LastName = resolvedLastName,
             OrderId = reservation.OrderId,
             TableId = reservation.TableId,
             LocationId = reservation.LocationId,
