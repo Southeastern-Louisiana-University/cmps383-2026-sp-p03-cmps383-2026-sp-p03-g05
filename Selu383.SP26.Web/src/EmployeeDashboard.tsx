@@ -259,6 +259,11 @@ export default function EmployeeDashboard({
     Record<number, number>
   >({});
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+  const [refundModalView, setRefundModalView] = useState<"list" | "detail">("list");
+  const [selectedRefundOrder, setSelectedRefundOrder] = useState<OrderRow | null>(null);
+  const [pendingRefundOrderId, setPendingRefundOrderId] = useState<number | null>(null);
+  const [showRefundConfirm, setShowRefundConfirm] = useState(false);
+  const [refundSuccessMessage, setRefundSuccessMessage] = useState("");
   const [isManageEmployeesModalOpen, setIsManageEmployeesModalOpen] =
     useState(false);
   const [isLoadingStaffUsers, setIsLoadingStaffUsers] = useState(false);
@@ -733,6 +738,11 @@ export default function EmployeeDashboard({
       return;
     }
 
+    setRefundModalView("list");
+    setSelectedRefundOrder(null);
+    setPendingRefundOrderId(null);
+    setShowRefundConfirm(false);
+    setRefundSuccessMessage("");
     setIsRefundModalOpen(true);
   };
 
@@ -765,6 +775,37 @@ export default function EmployeeDashboard({
 
   const closeRefundModal = () => {
     setIsRefundModalOpen(false);
+    setRefundModalView("list");
+    setSelectedRefundOrder(null);
+    setPendingRefundOrderId(null);
+    setShowRefundConfirm(false);
+    setRefundSuccessMessage("");
+  };
+
+  const handleSelectOrderForRefund = (orderId: number) => {
+    const order = orders.find((o) => o.id === orderId);
+    if (order) {
+      setSelectedRefundOrder(order);
+      setRefundModalView("detail");
+    }
+  };
+
+  const handleRefundClick = () => {
+    if (selectedRefundOrder) {
+      setPendingRefundOrderId(selectedRefundOrder.id);
+      setShowRefundConfirm(true);
+    }
+  };
+
+  const confirmRefund = () => {
+    setShowRefundConfirm(false);
+    setPendingRefundOrderId(null);
+    setRefundSuccessMessage("Success! The order has been refunded.");
+  };
+
+  const goBackToOrderList = () => {
+    setSelectedRefundOrder(null);
+    setRefundModalView("list");
   };
 
   const closeManageEmployeesModal = () => {
@@ -1430,7 +1471,165 @@ export default function EmployeeDashboard({
               </button>
             </div>
 
-            <p className="employee-meta-text">refund process will take place here.</p>
+            {refundModalView === "list" ? (
+              <>
+                {refundSuccessMessage ? (
+                  <p
+                    className="checkout-success"
+                    style={{
+                      marginBottom: "1rem",
+                      padding: "0.75rem",
+                      backgroundColor: "#d4edda",
+                      border: "1px solid #c3e6cb",
+                      borderRadius: "4px",
+                      color: "#155724",
+                    }}
+                  >
+                    {refundSuccessMessage}
+                  </p>
+                ) : null}
+                {orders.length === 0 ? (
+                  <p className="cart-empty-state">No orders available.</p>
+                ) : (
+                  <>
+                    {orders.filter((order) => {
+                      const status = (orderStatuses[order.id] ?? order.orderStatus).toLowerCase();
+                      return status === "completed" || status === "cancelled";
+                    }).length === 0 ? (
+                      <p className="cart-empty-state">
+                        No completed or cancelled orders available for refund.
+                      </p>
+                    ) : (
+                      <div className="employee-manage-list">
+                        {orders
+                          .filter((order) => {
+                            const status = (
+                              orderStatuses[order.id] ?? order.orderStatus
+                            ).toLowerCase();
+                            return status === "completed" || status === "cancelled";
+                          })
+                          .map((order) => (
+                            <article
+                              key={order.id}
+                              className="employee-manage-row"
+                              style={{ cursor: "pointer" }}
+                              onClick={() => handleSelectOrderForRefund(order.id)}
+                            >
+                              <p>
+                                <strong>Order #{order.id}</strong>
+                              </p>
+                              <p>
+                                <strong>Customer:</strong> {order.firstName} {order.lastName}
+                              </p>
+                              <p>
+                                <strong>Location:</strong> {order.location}
+                              </p>
+                              <p>
+                                <strong>Pickup:</strong> {order.pickupMethod}
+                              </p>
+                              <p>
+                                <strong>Status:</strong>{" "}
+                                {orderStatuses[order.id] ?? order.orderStatus}
+                              </p>
+                            </article>
+                          ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            ) : null}
+
+            {refundModalView === "detail" && selectedRefundOrder ? (
+              <>
+                {refundSuccessMessage ? (
+                  <p
+                    className="checkout-success"
+                    style={{
+                      marginBottom: "1rem",
+                      padding: "0.75rem",
+                      backgroundColor: "#d4edda",
+                      border: "1px solid #c3e6cb",
+                      borderRadius: "4px",
+                      color: "#155724",
+                    }}
+                  >
+                    {refundSuccessMessage}
+                  </p>
+                ) : null}
+
+                <div className="employee-order-detail-meta">
+                  <p>
+                    <strong>Order #:</strong> {selectedRefundOrder.id}
+                  </p>
+                  <p>
+                    <strong>Customer:</strong> {selectedRefundOrder.firstName}{" "}
+                    {selectedRefundOrder.lastName}
+                  </p>
+                  <p>
+                    <strong>Phone:</strong> {selectedRefundOrder.phone || "N/A"}
+                  </p>
+                  <p>
+                    <strong>Location:</strong> {selectedRefundOrder.location}
+                  </p>
+                  <p>
+                    <strong>Pickup:</strong> {selectedRefundOrder.pickupMethod}
+                  </p>
+                  <p>
+                    <strong>Status:</strong>{" "}
+                    {orderStatuses[selectedRefundOrder.id] ?? selectedRefundOrder.orderStatus}
+                  </p>
+                </div>
+
+                <div
+                  className="employee-refund-actions"
+                  style={{ display: "flex", gap: "0.75rem", marginTop: "1.5rem" }}
+                >
+                  <button
+                    type="button"
+                    className="employee-confirm-btn"
+                    onClick={handleRefundClick}
+                    disabled={!!refundSuccessMessage}
+                  >
+                    Refund Order
+                  </button>
+                  <button
+                    type="button"
+                    className="employee-cancel-btn"
+                    onClick={goBackToOrderList}
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {showRefundConfirm ? (
+        <div className="employee-modal-overlay">
+          <div className="employee-confirm-modal">
+            <h3>Confirm Refund</h3>
+            <p>Are you sure you want to refund Order #{pendingRefundOrderId}?</p>
+
+            <div className="employee-confirm-actions">
+              <button
+                type="button"
+                className="employee-confirm-btn"
+                onClick={confirmRefund}
+              >
+                Confirm Refund
+              </button>
+
+              <button
+                type="button"
+                className="employee-cancel-btn"
+                onClick={() => setShowRefundConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
