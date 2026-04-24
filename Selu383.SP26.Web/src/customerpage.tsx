@@ -1,4 +1,4 @@
-import { HeartOff, RefreshCw, Square, SquareCheck } from "lucide-react";
+import { HeartOff, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 type FeaturedMenuItem = {
@@ -405,7 +405,7 @@ export default function CustomerPage({
           </section>
 
           <section className="customer-card">
-            <h2>FEATURED ITEMS</h2>
+            <h2>FEATURED ITEMS Test</h2>
             <div className="customer-featured-grid">
               {featuredItems.map((item) => {
                 const selected = isInCart(item.name);
@@ -416,13 +416,13 @@ export default function CustomerPage({
                       <img src={item.image} alt={item.name} className="customer-featured-image" />
                       <button
                         type="button"
-                        className="customer-featured-toggle"
+                        className={`customer-featured-toggle ${selected ? "selected" : ""}`}
                         onClick={() => onToggleCartItem(item.name)}
                         aria-label={`${selected ? "Remove" : "Add"} ${item.name} ${
                           selected ? "from" : "to"
                         } cart`}
                       >
-                        {selected ? <SquareCheck size={20} /> : <Square size={20} />}
+                        <Plus size={14} className="customer-featured-toggle-icon" />
                       </button>
                     </div>
                     <div className="customer-featured-meta">

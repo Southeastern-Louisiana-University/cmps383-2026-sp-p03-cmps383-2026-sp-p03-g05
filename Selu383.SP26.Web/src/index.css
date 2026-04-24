@@ -1301,8 +1301,11 @@ a {
 }
 
 .menu-item-toggle {
-  border: 0;
-  background: transparent;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--lion-green-dark);
+  border-radius: 8px;
+  background: #ffffff;
   color: var(--lion-green-dark);
   cursor: pointer;
   display: inline-flex;
@@ -1310,11 +1313,24 @@ a {
   justify-content: center;
   padding: 0;
   line-height: 0;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 .menu-item-toggle:hover {
-  opacity: 0.72;
+  opacity: 1;
 }
+
+.menu-item-toggle.selected {
+  background: var(--lion-green-dark);
+  color: #ffffff;
+}
+
+.menu-item-toggle-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.5;
+}
+
 
 .about-box {
   background: var(--lion-black);
@@ -1574,14 +1590,27 @@ a {
   right: 6px;
   width: 28px;
   height: 28px;
-  border: 0;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
+  border: 2px solid var(--lion-green-dark);
+  border-radius: 50%;
+  background: #ffffff;
   color: var(--lion-green-dark);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  padding: 0;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.customer-featured-toggle.selected {
+  background: var(--lion-green-dark);
+  color: #ffffff;
+}
+
+.customer-featured-toggle-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.5;
 }
 
 .customer-featured-meta {

@@ -11,8 +11,6 @@ import {
   Menu,
   Minus,
   Plus,
-  Square,
-  SquareCheck,
   ShoppingCart,
   X,
 } from "lucide-react";
@@ -473,13 +471,13 @@ function MenuCard({
           <div className="menu-card-actions">
             <button
               type="button"
-              className="menu-item-toggle"
+              className={`menu-item-toggle ${isSelected ? "selected" : ""}`}
               onClick={() => onToggle(item.name)}
               aria-label={`${isSelected ? "Remove" : "Add"} ${item.name} ${
                 isSelected ? "from" : "to"
               } cart`}
             >
-              {isSelected ? <SquareCheck size={20} /> : <Square size={20} />}
+              <Plus size={14} className="menu-item-toggle-icon" />
             </button>
           </div>
         </div>
@@ -2042,19 +2040,15 @@ function App() {
                 </div>
                 <div className="featured-card-actions">
                   <button
-                    type="button"
-                    className="menu-item-toggle"
-                    onClick={() => toggleCartItem(drink.name)}
-                    aria-label={`${isInCart(drink.name) ? "Remove" : "Add"} ${
-                      drink.name
-                    } ${isInCart(drink.name) ? "from" : "to"} cart`}
-                  >
-                    {isInCart(drink.name) ? (
-                      <SquareCheck size={20} />
-                    ) : (
-                      <Square size={20} />
-                    )}
-                  </button>
+  type="button"
+  className={`menu-item-toggle ${isInCart(drink.name) ? "selected" : ""}`}
+  onClick={() => toggleCartItem(drink.name)}
+  aria-label={`${isInCart(drink.name) ? "Remove" : "Add"} ${
+    drink.name
+  } ${isInCart(drink.name) ? "from" : "to"} cart`}
+>
+  <Plus size={14} className="menu-item-toggle-icon" />
+</button>
                 </div>
               </div>
             ))}
