@@ -104,7 +104,8 @@ public class OrdersController(DataContext dataContext) : ControllerBase
             var activeOrders = orderSnapshots
                 .Where(x =>
                     !string.Equals(x.StatusName, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(x.StatusName, "Completed", StringComparison.OrdinalIgnoreCase))
+                    !string.Equals(x.StatusName, "Completed", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(x.StatusName, "Refunded", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             var inStoreCount = activeOrders
@@ -148,9 +149,33 @@ public class OrdersController(DataContext dataContext) : ControllerBase
         }
 
         var trimmedStatus = dto.Status.Trim();
+        var normalizedStatus = trimmedStatus.ToLowerInvariant();
 
         var statusEntity = await dataContext.Set<OrderStatus>()
-            .FirstOrDefaultAsync(x => x.Name == trimmedStatus);
+            .FirstOrDefaultAsync(x => x.Name.ToLower() == normalizedStatus);
+
+        if (
+            statusEntity == null &&
+            string.Equals(normalizedStatus, "refunded", StringComparison.Ordinal))
+        {
+            statusEntity = new OrderStatus
+            {
+                Name = "Refunded"
+            };
+
+            dataContext.Set<OrderStatus>().Add(statusEntity);
+
+            try
+            {
+                await dataContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                dataContext.Entry(statusEntity).State = EntityState.Detached;
+                statusEntity = await dataContext.Set<OrderStatus>()
+                    .FirstOrDefaultAsync(x => x.Name.ToLower() == normalizedStatus);
+            }
+        }
 
         if (statusEntity == null)
         {

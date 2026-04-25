@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Gauge, Pencil, Plus, Trash2 } from "lucide-react";
+import RoundedSelect from "./components/RoundedSelect";
 
 type MenuEditorProps = {
   buildApiUrl: (path: string) => string;
@@ -36,6 +37,11 @@ const emptyForm: MenuItemFormState = {
   nutrition: "",
   imageUrl: "",
 };
+
+const menuTypeOptions = [
+  { value: "Drink", label: "Drink" },
+  { value: "Food", label: "Food" },
+];
 
 const menuImageModules = import.meta.glob("./assets/*.{png,jpg,jpeg,webp,avif}", {
   eager: true,
@@ -451,13 +457,13 @@ export default function MenuEditor({
 
                 <label className="menu-editor-field">
                   <span>Type</span>
-                  <select
+                  <RoundedSelect
+                    className="menu-editor-select"
                     value={form.type}
-                    onChange={(event) => updateForm("type", event.target.value)}
-                  >
-                    <option value="Drink">Drink</option>
-                    <option value="Food">Food</option>
-                  </select>
+                    onChange={(nextValue) => updateForm("type", nextValue)}
+                    options={menuTypeOptions}
+                    ariaLabel="Menu item type"
+                  />
                 </label>
 
                 <label className="menu-editor-field">

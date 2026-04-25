@@ -215,7 +215,8 @@ public static class SeedHelper
             "Ready for Pickup",
             "Client in Drive Through",
             "Client in Store",
-            "Completed"
+            "Completed",
+            "Refunded"
         };
 
         var existingStatuses = await dataContext.Set<OrderStatus>()

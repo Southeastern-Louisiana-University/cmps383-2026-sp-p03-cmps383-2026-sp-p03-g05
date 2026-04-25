@@ -53,6 +53,7 @@ import EmployeeDashboard from "./EmployeeDashboard";
 import ReservationsModal, { type ReservationLoginPayload } from "./reservations";
 import MenuEditor from "./MenuEditor";
 import ReportsPage from "./ReportsPage";
+import RoundedSelect from "./components/RoundedSelect";
 
 const menuItemImages: Record<string, string> = {
   "Iced Latte": icedLateImg,
@@ -614,9 +615,10 @@ function App() {
   const isCustomerPage = currentPath === customerPagePath;
   const isEmployeeDashboardPage = currentPath === employeeDashboardPath;
   const isReportsPage = currentPath === reportsPath;
+  const isAdmin = userRoles.some((role) => role.toLowerCase() === "admin");
   const isEmployeeOrAdmin =
     userRoles.some((role) => role.toLowerCase() === "employee") ||
-    userRoles.some((role) => role.toLowerCase() === "admin");
+    isAdmin;
 
   const displayMenuItems = [
     ...drinkMenuItems,
@@ -685,6 +687,23 @@ function App() {
     guestCheckoutFirstName.trim().length > 0 &&
     guestCheckoutLastName.trim().length > 0 &&
     guestCheckoutPhoneDigits.length === 10;
+
+  const checkoutLocationOptions = isLocationsLoading
+    ? [{ value: "", label: "Loading locations...", disabled: true }]
+    : locations.length === 0
+      ? [{ value: "", label: "No locations available", disabled: true }]
+      : [
+          { value: "", label: "Choose location" },
+          ...locations.map((location) => ({
+            value: String(location.id),
+            label: location.address,
+          })),
+        ];
+
+  const pickupTypeOptions = pickupOptions.map((option) => ({
+    value: option,
+    label: option,
+  }));
 
   useEffect(() => {
     const previousCount = previousCartCountRef.current;
@@ -2183,7 +2202,7 @@ function App() {
         />
       ) : null}
 
-      {isReportsPage && isEmployeeOrAdmin ? (
+      {isReportsPage && isAdmin ? (
         <ReportsPage onBack={() => navigateToPath(employeeDashboardPath)} />
       ) : null}
 
@@ -2193,7 +2212,7 @@ function App() {
         isCustomerPage ||
         (isEmployeeDashboardPage && isEmployeeOrAdmin) ||
         (isMenuEditorPage && isEmployeeOrAdmin) ||
-        (isReportsPage && isEmployeeOrAdmin)
+        (isReportsPage && isAdmin)
           ? "none"
           : undefined,
         }}
@@ -2954,32 +2973,20 @@ function App() {
 
                 <label className="checkout-field">
                   <span>Select your location:</span>
-                  <select
-                    value={selectedLocationId}
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
+                  <RoundedSelect
+                    className="checkout-select"
+                    value={selectedLocationId === "" ? "" : String(selectedLocationId)}
+                    onChange={(nextValue) => {
                       setSelectedLocationId(nextValue === "" ? "" : Number(nextValue));
                     }}
+                    options={checkoutLocationOptions}
                     disabled={
                       isLocationsLoading ||
                       isSubmittingOrder ||
                       locations.length === 0
                     }
-                  >
-                    {isLocationsLoading ? (
-                      <option value="">Loading locations...</option>
-                    ) : null}
-                    {!isLocationsLoading && locations.length === 0 ? (
-                      <option value="">No locations available</option>
-                    ) : null}
-                    {!isLocationsLoading
-                      ? locations.map((location) => (
-                          <option key={location.id} value={location.id}>
-                            {location.address}
-                          </option>
-                        ))
-                      : null}
-                  </select>
+                    ariaLabel="Select your location"
+                  />
                 </label>
 
                 {locationsErrorMessage ? (
@@ -2988,19 +2995,16 @@ function App() {
 
                 <label className="checkout-field">
                   <span>Pickup:</span>
-                  <select
+                  <RoundedSelect
+                    className="checkout-select"
                     value={pickupType}
-                    onChange={(event) =>
-                      setPickupType(event.target.value as (typeof pickupOptions)[number])
+                    onChange={(nextValue) =>
+                      setPickupType(nextValue as (typeof pickupOptions)[number])
                     }
+                    options={pickupTypeOptions}
                     disabled={isSubmittingOrder}
-                  >
-                    {pickupOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
+                    ariaLabel="Pickup method"
+                  />
                 </label>
 
                 <div className="checkout-field">

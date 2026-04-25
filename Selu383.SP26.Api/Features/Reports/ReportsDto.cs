@@ -13,6 +13,9 @@ public class SalesSummaryDto
 
     public decimal MonthlySales { get; set; }
     public int MonthlyOrders { get; set; }
+
+    public int RefundsCount { get; set; }
+    public decimal RefundsTotal { get; set; }
 }
 
 public class ReportListItemDto

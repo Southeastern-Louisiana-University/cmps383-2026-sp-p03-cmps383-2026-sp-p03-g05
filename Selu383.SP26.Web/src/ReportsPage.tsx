@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import RoundedSelect from "./components/RoundedSelect";
 
 type ReportsPageProps = {
   onBack: () => void;
@@ -18,12 +19,32 @@ type Summary = {
   weeklyOrders: number;
   monthlySales: number;
   monthlyOrders: number;
+  refundsCount: number;
+  refundsTotal: number;
 };
 
 export default function ReportsPage({ onBack }: ReportsPageProps) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [selectedLocationId, setSelectedLocationId] = useState<string>("all");
+
+  const now = new Date();
+  const formatDate = (value: Date) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(value);
+  const todayLabel = formatDate(now);
+
+  const sevenDayStart = new Date(now);
+  sevenDayStart.setDate(now.getDate() - 6);
+  const sevenDayRangeLabel = `${formatDate(sevenDayStart)} - ${todayLabel}`;
+
+  const currentMonthLabel = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  }).format(now);
 
   useEffect(() => {
     fetch("/api/locations")
@@ -43,6 +64,14 @@ export default function ReportsPage({ onBack }: ReportsPageProps) {
       .then(setSummary)
       .catch(console.error);
   }, [selectedLocationId]);
+
+  const reportLocationOptions = [
+    { value: "all", label: "All Locations" },
+    ...locations.map((location) => ({
+      value: String(location.id),
+      label: location.address,
+    })),
+  ];
 
   return (
     <main className="reports-page">
@@ -68,20 +97,14 @@ export default function ReportsPage({ onBack }: ReportsPageProps) {
 
         <div className="reports-toolbar">
           <div className="reports-filter-group">
-            <label htmlFor="reports-location-select">Select Location</label>
-            <select
-              id="reports-location-select"
+            <label>Select Location</label>
+            <RoundedSelect
               className="reports-select"
               value={selectedLocationId}
-              onChange={(e) => setSelectedLocationId(e.target.value)}
-            >
-              <option value="all">All Locations</option>
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.address}
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedLocationId}
+              options={reportLocationOptions}
+              ariaLabel="Select Location"
+            />
           </div>
         </div>
 
@@ -101,69 +124,45 @@ export default function ReportsPage({ onBack }: ReportsPageProps) {
               </div>
             </div>
 
-            <div className="reports-stats-grid">
-              <article className="reports-stat-card">
-                <p className="reports-stat-label">Daily Sales</p>
-                <h3>${summary.dailySales.toFixed(2)}</h3>
-              </article>
-
-              <article className="reports-stat-card">
-                <p className="reports-stat-label">Daily Orders</p>
-                <h3>{summary.dailyOrders}</h3>
-              </article>
-
-              <article className="reports-stat-card">
-                <p className="reports-stat-label">Weekly Sales</p>
-                <h3>${summary.weeklySales.toFixed(2)}</h3>
-              </article>
-
-              <article className="reports-stat-card">
-                <p className="reports-stat-label">Weekly Orders</p>
-                <h3>{summary.weeklyOrders}</h3>
-              </article>
-
-              <article className="reports-stat-card reports-stat-card-featured">
-                <p className="reports-stat-label">Monthly Sales</p>
-                <h3>${summary.monthlySales.toFixed(2)}</h3>
-              </article>
-
-              <article className="reports-stat-card reports-stat-card-featured">
-                <p className="reports-stat-label">Monthly Orders</p>
-                <h3>{summary.monthlyOrders}</h3>
-              </article>
-            </div>
-
             <div className="reports-table-wrap">
               <table className="reports-table">
                 <thead>
                   <tr>
-                    <th colSpan={2}>Dashboard Summary — {summary.locationLabel}</th>
+                    <th colSpan={2}>Dashboard Summary - {summary.locationLabel}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>Daily Sales</td>
-                    <td>${summary.dailySales.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td>Daily Orders</td>
+                    <td>Today's Orders ({todayLabel})</td>
                     <td>{summary.dailyOrders}</td>
                   </tr>
                   <tr>
-                    <td>Weekly Sales</td>
-                    <td>${summary.weeklySales.toFixed(2)}</td>
+                    <td>Today's Sales ({todayLabel})</td>
+                    <td>${summary.dailySales.toFixed(2)}</td>
                   </tr>
                   <tr>
-                    <td>Weekly Orders</td>
+                    <td>Last 7 Day's Orders ({sevenDayRangeLabel})</td>
                     <td>{summary.weeklyOrders}</td>
                   </tr>
                   <tr>
-                    <td>Monthly Sales</td>
+                    <td>Last 7 Day's Sales ({sevenDayRangeLabel})</td>
+                    <td>${summary.weeklySales.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td>Current Month's Orders ({currentMonthLabel})</td>
+                    <td>{summary.monthlyOrders}</td>
+                  </tr>
+                  <tr>
+                    <td>Current Month's Sales ({currentMonthLabel})</td>
                     <td>${summary.monthlySales.toFixed(2)}</td>
                   </tr>
                   <tr>
-                    <td>Monthly Orders</td>
-                    <td>{summary.monthlyOrders}</td>
+                    <td>Refund Count This Month ({currentMonthLabel})</td>
+                    <td>{summary.refundsCount}</td>
+                  </tr>
+                  <tr>
+                    <td>Refund Total This Month ({currentMonthLabel})</td>
+                    <td>${summary.refundsTotal.toFixed(2)}</td>
                   </tr>
                 </tbody>
               </table>

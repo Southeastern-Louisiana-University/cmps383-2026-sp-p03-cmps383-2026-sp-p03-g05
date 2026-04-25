@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import RoundedSelect from "./components/RoundedSelect";
 
 type LocationDto = {
   id: number;
@@ -610,6 +611,18 @@ export default function ReservationsModal({
     return null;
   }
 
+  const reservationLocationOptions = [
+    {
+      value: "",
+      label: isLocationsLoading ? "Loading locations..." : "Choose location",
+      disabled: isLocationsLoading,
+    },
+    ...locations.map((location) => ({
+      value: String(location.id),
+      label: location.address,
+    })),
+  ];
+
   return (
     <div
       className="modal-overlay"
@@ -711,10 +724,10 @@ export default function ReservationsModal({
 
             <label className="checkout-field">
               <span>Select your location</span>
-              <select
-                value={selectedLocationId}
-                onChange={(event) => {
-                  const next = event.target.value;
+              <RoundedSelect
+                className="checkout-select"
+                value={selectedLocationId === "" ? "" : String(selectedLocationId)}
+                onChange={(next) => {
                   setSelectedLocationId(next === "" ? "" : Number(next));
                   setSelectedDate("");
                   setVisibleMonth(minSelectableMonth);
@@ -724,17 +737,10 @@ export default function ReservationsModal({
                   setReservationErrorMessage(null);
                   setIsReservationSuccessVisible(false);
                 }}
+                options={reservationLocationOptions}
                 disabled={isLocationsLoading || isSubmittingReservation}
-              >
-                <option value="">
-                  {isLocationsLoading ? "Loading locations..." : "Choose location"}
-                </option>
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.address}
-                  </option>
-                ))}
-              </select>
+                ariaLabel="Select your location"
+              />
             </label>
             {locationsErrorMessage ? (
               <p className="checkout-error">{locationsErrorMessage}</p>

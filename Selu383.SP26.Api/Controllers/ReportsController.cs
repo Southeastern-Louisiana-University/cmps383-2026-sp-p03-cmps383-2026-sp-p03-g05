@@ -11,7 +11,7 @@ namespace Selu383.SP26.Api.Controllers;
 
 [Route("api/reports")]
 [ApiController]
-/*[Authorize(Roles = RoleNames.Admin + "," + RoleNames.Employee)]*/
+[Authorize(Roles = RoleNames.Admin)]
 public class ReportsController(DataContext dataContext) : ControllerBase
 {
     [HttpGet]
@@ -90,6 +90,7 @@ public class ReportsController(DataContext dataContext) : ControllerBase
             x.Id,
             x.LocationId,
             x.DateOrdered,
+            StatusName = x.OrderStatus != null ? x.OrderStatus.Name : string.Empty,
             Total = x.OrderMenuItems.Sum(y => (decimal?)(y.Quantity * y.MenuItem!.Price)) ?? 0m
         });
 
@@ -104,6 +105,10 @@ public class ReportsController(DataContext dataContext) : ControllerBase
         var monthlyOrders = await projectedOrders
             .Where(x => x.DateOrdered >= monthStart && x.DateOrdered < nextMonthStart)
             .ToListAsync();
+
+        var monthlyRefunds = monthlyOrders
+            .Where(x => string.Equals(x.StatusName, "Refunded", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         var locationLabel = "All Locations";
 
@@ -127,7 +132,10 @@ public class ReportsController(DataContext dataContext) : ControllerBase
             WeeklyOrders = weeklyOrders.Count,
 
             MonthlySales = monthlyOrders.Sum(x => x.Total),
-            MonthlyOrders = monthlyOrders.Count
+            MonthlyOrders = monthlyOrders.Count,
+
+            RefundsCount = monthlyRefunds.Count,
+            RefundsTotal = monthlyRefunds.Sum(x => x.Total)
         };
 
         return Ok(result);

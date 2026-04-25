@@ -2,16 +2,20 @@ import {
   BanknoteX,
   CalendarDays,
   Car,
+  CheckCircle2,
   Eraser,
   FileChartLine,
   MapPin,
+  NotebookPen,
   Pen,
+  Plus,
   Store,
   UserPlus,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import RoundedSelect from "./components/RoundedSelect";
 
 type EmployeeDashboardProps = {
   roles: string[];
@@ -121,7 +125,11 @@ const orderCardStatusOptions = orderStatusOptions.filter(
 );
 
 const pickupMethodOptions = ["In Store", "Drive Through"] as const;
-const closedStatuses = new Set(["completed", "cancelled"]);
+const staffRoleOptions = [
+  { value: "Admin", label: "Admin" },
+  { value: "Employee", label: "Employee" },
+];
+const closedStatuses = new Set(["completed", "cancelled", "refunded"]);
 const filterableOrderStatusOptions = orderStatusOptions.filter(
   (status) => !closedStatuses.has(status.toLowerCase()),
 );
@@ -260,6 +268,16 @@ export default function EmployeeDashboard({
     useState<ApiStaffOrderDetail | null>(null);
   const [isReservationsModalOpen, setIsReservationsModalOpen] = useState(false);
   const [isAddLocationModalOpen, setIsAddLocationModalOpen] = useState(false);
+  const [locationModalError, setLocationModalError] = useState("");
+  const [locationModalNotice, setLocationModalNotice] = useState("");
+  const [editingLocationId, setEditingLocationId] = useState<number | null>(null);
+  const [editLocationAddress, setEditLocationAddress] = useState("");
+  const [editLocationTableCount, setEditLocationTableCount] = useState("");
+  const [isSubmittingLocationEdit, setIsSubmittingLocationEdit] = useState(false);
+  const [isAddLocationFormOpen, setIsAddLocationFormOpen] = useState(false);
+  const [newLocationAddress, setNewLocationAddress] = useState("");
+  const [newLocationTableCount, setNewLocationTableCount] = useState("10");
+  const [isSubmittingNewLocation, setIsSubmittingNewLocation] = useState(false);
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const [orderTimerStoppedAt, setOrderTimerStoppedAt] = useState<
     Record<number, number>
@@ -269,7 +287,10 @@ export default function EmployeeDashboard({
   const [selectedRefundOrder, setSelectedRefundOrder] = useState<OrderRow | null>(null);
   const [pendingRefundOrderId, setPendingRefundOrderId] = useState<number | null>(null);
   const [showRefundConfirm, setShowRefundConfirm] = useState(false);
-  const [refundSuccessMessage, setRefundSuccessMessage] = useState("");
+  const [isRefundingOrder, setIsRefundingOrder] = useState(false);
+  const [refundSearchQuery, setRefundSearchQuery] = useState("");
+  const [refundSuccessToastMessage, setRefundSuccessToastMessage] = useState("");
+  const refundSuccessToastTimerRef = useRef<number | null>(null);
   const [isManageEmployeesModalOpen, setIsManageEmployeesModalOpen] =
     useState(false);
   const [isLoadingStaffUsers, setIsLoadingStaffUsers] = useState(false);
@@ -482,6 +503,15 @@ export default function EmployeeDashboard({
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (refundSuccessToastTimerRef.current !== null) {
+        window.clearTimeout(refundSuccessToastTimerRef.current);
+        refundSuccessToastTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const now = Date.now();
 
     setOrderTimerStoppedAt((previous) => {
@@ -564,6 +594,36 @@ export default function EmployeeDashboard({
     phoneFilter,
     pickupMethodFilter,
   ]);
+
+  const refundableOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const status = (orderStatuses[order.id] ?? order.orderStatus).toLowerCase();
+      return status === "completed";
+    });
+  }, [orderStatuses, orders]);
+
+  const filteredRefundOrders = useMemo(() => {
+    const searchValue = refundSearchQuery.trim().toLowerCase();
+    if (searchValue.length === 0) {
+      return refundableOrders;
+    }
+
+    return refundableOrders.filter((order) => {
+      const firstName = order.firstName.toLowerCase();
+      const lastName = order.lastName.toLowerCase();
+      const fullName = `${order.firstName} ${order.lastName}`.toLowerCase();
+      const phone = (order.phone ?? "").toLowerCase();
+      const orderNumber = String(order.id);
+
+      return (
+        firstName.includes(searchValue) ||
+        lastName.includes(searchValue) ||
+        fullName.includes(searchValue) ||
+        phone.includes(searchValue) ||
+        orderNumber.includes(searchValue)
+      );
+    });
+  }, [refundableOrders, refundSearchQuery]);
 
   const currentOrderCounts = useMemo(() => {
     return orders.reduce(
@@ -648,6 +708,48 @@ export default function EmployeeDashboard({
       .sort((a, b) => a.id - b.id);
   }, [staffUsers]);
 
+  const locationFilterOptions = useMemo(
+    () => [
+      { value: "", label: "All locations" },
+      ...locations.map((location) => ({
+        value: location.address,
+        label: location.address,
+      })),
+    ],
+    [locations],
+  );
+
+  const orderStatusFilterOptions = useMemo(
+    () => [
+      { value: "", label: "Filter Status" },
+      ...filterableOrderStatusOptions.map((status) => ({
+        value: status,
+        label: status,
+      })),
+    ],
+    [],
+  );
+
+  const pickupMethodFilterOptions = useMemo(
+    () => [
+      { value: "", label: "Filter Pickup Method" },
+      ...pickupMethodOptions.map((pickupMethod) => ({
+        value: pickupMethod,
+        label: pickupMethod,
+      })),
+    ],
+    [],
+  );
+
+  const orderCardStatusSelectOptions = useMemo(
+    () =>
+      orderCardStatusOptions.map((status) => ({
+        value: status,
+        label: status,
+      })),
+    [],
+  );
+
   const clearFilters = () => {
     setLastNameFilter("");
     setFirstNameFilter("");
@@ -661,7 +763,7 @@ export default function EmployeeDashboard({
     orderId: number,
     nextStatus: string,
     failureMessage: string,
-  ) => {
+  ): Promise<boolean> => {
     const previousStatus =
       orderStatuses[orderId] ??
       orders.find((order) => order.id === orderId)?.orderStatus ??
@@ -688,6 +790,7 @@ export default function EmployeeDashboard({
       }
 
       await loadOrders(false);
+      return true;
     } catch (err) {
       console.error("Failed to update status", err);
       setOrderStatuses((previous) => ({
@@ -695,6 +798,7 @@ export default function EmployeeDashboard({
         [orderId]: previousStatus,
       }));
       setError(failureMessage);
+      return false;
     }
   };
 
@@ -751,7 +855,8 @@ export default function EmployeeDashboard({
     setSelectedRefundOrder(null);
     setPendingRefundOrderId(null);
     setShowRefundConfirm(false);
-    setRefundSuccessMessage("");
+    setIsRefundingOrder(false);
+    setRefundSearchQuery("");
     setIsRefundModalOpen(true);
   };
 
@@ -788,7 +893,8 @@ export default function EmployeeDashboard({
     setSelectedRefundOrder(null);
     setPendingRefundOrderId(null);
     setShowRefundConfirm(false);
-    setRefundSuccessMessage("");
+    setIsRefundingOrder(false);
+    setRefundSearchQuery("");
   };
 
   const handleSelectOrderForRefund = (orderId: number) => {
@@ -806,10 +912,35 @@ export default function EmployeeDashboard({
     }
   };
 
-  const confirmRefund = () => {
+  const confirmRefund = async () => {
+    if (pendingRefundOrderId === null) {
+      return;
+    }
+
+    const refundOrderId = pendingRefundOrderId;
     setShowRefundConfirm(false);
     setPendingRefundOrderId(null);
-    setRefundSuccessMessage("Success! The order has been refunded.");
+    setIsRefundingOrder(true);
+
+    const wasRefunded = await applyOrderStatusUpdate(
+      refundOrderId,
+      "Refunded",
+      "Could not refund order.",
+    );
+
+    setIsRefundingOrder(false);
+
+    if (wasRefunded) {
+      if (refundSuccessToastTimerRef.current !== null) {
+        window.clearTimeout(refundSuccessToastTimerRef.current);
+      }
+      setRefundSuccessToastMessage(`Order #${refundOrderId} refunded successfully.`);
+      refundSuccessToastTimerRef.current = window.setTimeout(() => {
+        setRefundSuccessToastMessage("");
+        refundSuccessToastTimerRef.current = null;
+      }, 2400);
+      closeRefundModal();
+    }
   };
 
   const goBackToOrderList = () => {
@@ -901,11 +1032,198 @@ export default function EmployeeDashboard({
   };
 
   const openAddLocationModal = () => {
+    if (!ensureAdminAccess()) {
+      return;
+    }
+
+    setLocationModalError("");
+    setLocationModalNotice("");
+    setEditingLocationId(null);
+    setEditLocationAddress("");
+    setEditLocationTableCount("");
+    setIsAddLocationFormOpen(false);
+    setNewLocationAddress("");
+    setNewLocationTableCount("10");
     setIsAddLocationModalOpen(true);
+    void loadLocations();
   };
 
   const closeAddLocationModal = () => {
     setIsAddLocationModalOpen(false);
+    setLocationModalError("");
+    setLocationModalNotice("");
+    setEditingLocationId(null);
+    setEditLocationAddress("");
+    setEditLocationTableCount("");
+    setIsAddLocationFormOpen(false);
+    setNewLocationAddress("");
+    setNewLocationTableCount("10");
+  };
+
+  const beginLocationEdit = (location: LocationDto) => {
+    setLocationModalError("");
+    setLocationModalNotice("");
+    setIsAddLocationFormOpen(false);
+    setEditingLocationId(location.id);
+    setEditLocationAddress(location.address);
+    setEditLocationTableCount(String(location.tableCount));
+  };
+
+  const cancelLocationEdit = () => {
+    setEditingLocationId(null);
+    setEditLocationAddress("");
+    setEditLocationTableCount("");
+  };
+
+  const toggleAddLocationForm = () => {
+    setLocationModalError("");
+    setLocationModalNotice("");
+    setEditingLocationId(null);
+    setEditLocationAddress("");
+    setEditLocationTableCount("");
+    setIsAddLocationFormOpen((previous) => !previous);
+  };
+
+  const handleSaveLocationEdit = async (
+    event: FormEvent<HTMLFormElement>,
+    locationId: number,
+  ) => {
+    event.preventDefault();
+
+    const address = editLocationAddress.trim();
+    const tableCount = Number.parseInt(editLocationTableCount, 10);
+
+    if (address.length === 0) {
+      setLocationModalError("Address is required.");
+      return;
+    }
+
+    if (!Number.isInteger(tableCount) || tableCount < 1) {
+      setLocationModalError("Table count must be a whole number of at least 1.");
+      return;
+    }
+
+    const existingLocation = locations.find((location) => location.id === locationId);
+    if (!existingLocation) {
+      setLocationModalError("Location no longer exists.");
+      return;
+    }
+
+    setIsSubmittingLocationEdit(true);
+    setLocationModalError("");
+    setLocationModalNotice("");
+
+    try {
+      const response = await fetch(buildApiUrl(`/api/locations/${locationId}`), {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: existingLocation.id,
+          name: existingLocation.name,
+          address,
+          tableCount,
+          managerId: existingLocation.managerId ?? null,
+        }),
+      });
+
+      if (!response.ok) {
+        let message = `Failed to update location (${response.status}).`;
+        try {
+          const responseText = await response.text();
+          if (responseText.trim().length > 0) {
+            message = responseText;
+          }
+        } catch {
+          // Keep fallback error message.
+        }
+        throw new Error(message);
+      }
+
+      await loadLocations();
+      cancelLocationEdit();
+      setLocationModalNotice("Location updated.");
+    } catch (err) {
+      console.error(err);
+      setLocationModalError(
+        err instanceof Error ? err.message : "Could not update location.",
+      );
+    } finally {
+      setIsSubmittingLocationEdit(false);
+    }
+  };
+
+  const handleCreateLocation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const address = newLocationAddress.trim();
+    const tableCount = Number.parseInt(newLocationTableCount, 10);
+
+    if (address.length === 0) {
+      setLocationModalError("Address is required.");
+      return;
+    }
+
+    if (!Number.isInteger(tableCount) || tableCount < 1) {
+      setLocationModalError("Table count must be a whole number of at least 1.");
+      return;
+    }
+
+    const existingNames = new Set(
+      locations.map((location) => location.name.trim().toLowerCase()),
+    );
+    let nextIndex = 1;
+    while (existingNames.has(`location ${nextIndex}`)) {
+      nextIndex += 1;
+    }
+    const generatedName = `Location ${nextIndex}`;
+
+    setIsSubmittingNewLocation(true);
+    setLocationModalError("");
+    setLocationModalNotice("");
+
+    try {
+      const response = await fetch(buildApiUrl("/api/locations"), {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: 0,
+          name: generatedName,
+          address,
+          tableCount,
+          managerId: null,
+        }),
+      });
+
+      if (!response.ok) {
+        let message = `Failed to add location (${response.status}).`;
+        try {
+          const responseText = await response.text();
+          if (responseText.trim().length > 0) {
+            message = responseText;
+          }
+        } catch {
+          // Keep fallback error message.
+        }
+        throw new Error(message);
+      }
+
+      await loadLocations();
+      setIsAddLocationFormOpen(false);
+      setNewLocationAddress("");
+      setNewLocationTableCount("10");
+      setLocationModalNotice("Location added.");
+    } catch (err) {
+      console.error(err);
+      setLocationModalError(err instanceof Error ? err.message : "Could not add location.");
+    } finally {
+      setIsSubmittingNewLocation(false);
+    }
   };
 
   const openViewOrderModal = async (orderId: number) => {
@@ -996,19 +1314,14 @@ export default function EmployeeDashboard({
         <article className="employee-card">
           <h2>Location Selector</h2>
 
-          <select
+          <RoundedSelect
             className="employee-search employee-top-location-filter"
             value={locationFilter}
-            onChange={(event) => setLocationFilter(event.target.value)}
+            onChange={setLocationFilter}
+            options={locationFilterOptions}
             disabled={locationsLoading && locations.length === 0}
-          >
-            <option value="">All locations</option>
-            {locations.map((location) => (
-              <option key={location.id} value={location.address}>
-                {location.address}
-              </option>
-            ))}
-          </select>
+            ariaLabel="Location filter"
+          />
 
           <p className="employee-location-helper-text">
             Please make sure you are on the right location.
@@ -1035,7 +1348,7 @@ export default function EmployeeDashboard({
             <span className="employee-add-location-icon" aria-hidden="true">
               <MapPin size={18} />
             </span>
-            <span>Add Location</span>
+            <span>Edit Locations</span>
           </button>
 
           {locationsLoading ? (
@@ -1080,31 +1393,21 @@ export default function EmployeeDashboard({
           <h2>Order View Settings</h2>
 
           <div className="employee-settings-two-col">
-            <select
+            <RoundedSelect
               className="employee-search"
               value={orderStatusFilter}
-              onChange={(event) => setOrderStatusFilter(event.target.value)}
-            >
-              <option value="">Filter Status</option>
-              {filterableOrderStatusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
+              onChange={setOrderStatusFilter}
+              options={orderStatusFilterOptions}
+              ariaLabel="Filter Status"
+            />
 
-            <select
+            <RoundedSelect
               className="employee-search"
               value={pickupMethodFilter}
-              onChange={(event) => setPickupMethodFilter(event.target.value)}
-            >
-              <option value="">Filter Pickup Method</option>
-              {pickupMethodOptions.map((pickupMethod) => (
-                <option key={pickupMethod} value={pickupMethod}>
-                  {pickupMethod}
-                </option>
-              ))}
-            </select>
+              onChange={setPickupMethodFilter}
+              options={pickupMethodFilterOptions}
+              ariaLabel="Filter Pickup Method"
+            />
           </div>
 
           <div className="employee-settings-two-col">
@@ -1174,19 +1477,13 @@ export default function EmployeeDashboard({
                 <div className="employee-order-card-top">
                   <h3>Order #{order.id}</h3>
 
-                  <select
+                  <RoundedSelect
                     className="employee-order-status-select"
                     value={currentStatus}
-                    onChange={(event) =>
-                      handleStatusChange(order.id, event.target.value)
-                    }
-                  >
-                    {orderCardStatusOptions.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(nextStatus) => handleStatusChange(order.id, nextStatus)}
+                    options={orderCardStatusSelectOptions}
+                    ariaLabel={`Order ${order.id} status`}
+                  />
                 </div>
 
                 <div className="employee-order-card-body">
@@ -1443,7 +1740,7 @@ export default function EmployeeDashboard({
           className="modal-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Add location"
+          aria-label="Edit locations"
           onClick={closeAddLocationModal}
         >
           <div
@@ -1451,20 +1748,157 @@ export default function EmployeeDashboard({
             onClick={(event) => event.stopPropagation()}
           >
             <div className="cart-modal-header">
-              <h2>Add Location</h2>
+              <h2>Edit Locations</h2>
               <button
                 type="button"
                 className="cart-modal-close"
-                aria-label="Close add location modal"
+                aria-label="Close edit locations modal"
                 onClick={closeAddLocationModal}
               >
                 <X size={18} />
               </button>
             </div>
 
-            <p className="employee-meta-text">
-              add location process will take place here.
-            </p>
+            <button
+              type="button"
+              className="employee-location-add-toggle-btn"
+              onClick={toggleAddLocationForm}
+              disabled={isSubmittingLocationEdit || isSubmittingNewLocation}
+            >
+              <Plus size={16} />
+              <span>{isAddLocationFormOpen ? "Cancel New Location" : "Add Location"}</span>
+            </button>
+
+            {isAddLocationFormOpen ? (
+              <form
+                className="employee-location-edit-form employee-location-add-form"
+                onSubmit={(event) => {
+                  void handleCreateLocation(event);
+                }}
+              >
+                <input
+                  type="text"
+                  className="employee-search"
+                  placeholder="Location address"
+                  value={newLocationAddress}
+                  onChange={(event) => setNewLocationAddress(event.target.value)}
+                  disabled={isSubmittingNewLocation}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  className="employee-search employee-location-table-count-input"
+                  placeholder="Table count"
+                  value={newLocationTableCount}
+                  onChange={(event) => setNewLocationTableCount(event.target.value)}
+                  disabled={isSubmittingNewLocation}
+                />
+                <div className="employee-location-edit-actions">
+                  <button
+                    type="submit"
+                    className="employee-confirm-btn"
+                    disabled={isSubmittingNewLocation}
+                  >
+                    {isSubmittingNewLocation ? "Adding..." : "Save Location"}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+
+            {locationModalError ? <p className="checkout-error">{locationModalError}</p> : null}
+            {locationModalNotice ? (
+              <p className="employee-success-text">{locationModalNotice}</p>
+            ) : null}
+
+            {locationsLoading ? (
+              <p className="employee-meta-text">Loading locations...</p>
+            ) : null}
+
+            {!locationsLoading && locations.length === 0 ? (
+              <p className="cart-empty-state">No locations are configured yet.</p>
+            ) : null}
+
+            {!locationsLoading && locations.length > 0 ? (
+              <div className="employee-location-list">
+                {locations.map((location) => {
+                  const isEditing = editingLocationId === location.id;
+
+                  return (
+                    <article key={location.id} className="employee-location-row">
+                      {isEditing ? (
+                        <form
+                          className="employee-location-edit-form"
+                          onSubmit={(event) => {
+                            void handleSaveLocationEdit(event, location.id);
+                          }}
+                        >
+                          <label className="employee-location-input-group">
+                            <span className="employee-location-input-label">Address</span>
+                            <input
+                              type="text"
+                              className="employee-search"
+                              placeholder="Location address"
+                              value={editLocationAddress}
+                              onChange={(event) => setEditLocationAddress(event.target.value)}
+                              disabled={isSubmittingLocationEdit}
+                            />
+                          </label>
+                          <label className="employee-location-input-group">
+                            <span className="employee-location-input-label">Table Count</span>
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              className="employee-search employee-location-table-count-input"
+                              placeholder="Table count"
+                              value={editLocationTableCount}
+                              onChange={(event) => setEditLocationTableCount(event.target.value)}
+                              disabled={isSubmittingLocationEdit}
+                            />
+                          </label>
+                          <div className="employee-location-edit-actions">
+                            <button
+                              type="submit"
+                              className="employee-confirm-btn"
+                              disabled={isSubmittingLocationEdit}
+                            >
+                              {isSubmittingLocationEdit ? "Saving..." : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              className="employee-cancel-btn"
+                              onClick={cancelLocationEdit}
+                              disabled={isSubmittingLocationEdit}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="employee-location-edit-btn"
+                            onClick={() => beginLocationEdit(location)}
+                            aria-label={`Edit ${location.address}`}
+                            disabled={isSubmittingLocationEdit || isSubmittingNewLocation}
+                          >
+                            <NotebookPen size={16} />
+                          </button>
+                          <div className="employee-location-bubble">
+                            <p className="employee-location-bubble-address">{location.address}</p>
+                            <p className="employee-location-bubble-meta">
+                              Tables: {location.tableCount}
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1495,66 +1929,56 @@ export default function EmployeeDashboard({
 
             {refundModalView === "list" ? (
               <>
-                {refundSuccessMessage ? (
-                  <p
-                    className="checkout-success"
-                    style={{
-                      marginBottom: "1rem",
-                      padding: "0.75rem",
-                      backgroundColor: "#d4edda",
-                      border: "1px solid #c3e6cb",
-                      borderRadius: "4px",
-                      color: "#155724",
-                    }}
-                  >
-                    {refundSuccessMessage}
-                  </p>
-                ) : null}
                 {orders.length === 0 ? (
                   <p className="cart-empty-state">No orders available.</p>
                 ) : (
                   <>
-                    {orders.filter((order) => {
-                      const status = (orderStatuses[order.id] ?? order.orderStatus).toLowerCase();
-                      return status === "completed" || status === "cancelled";
-                    }).length === 0 ? (
+                    <input
+                      type="text"
+                      className="employee-search employee-refund-search"
+                      placeholder="Search by name, phone, or order #"
+                      value={refundSearchQuery}
+                      onChange={(event) => setRefundSearchQuery(event.target.value)}
+                    />
+
+                    {refundableOrders.length === 0 ? (
                       <p className="cart-empty-state">
-                        No completed or cancelled orders available for refund.
+                        No completed orders available for refund.
+                      </p>
+                    ) : filteredRefundOrders.length === 0 ? (
+                      <p className="cart-empty-state">
+                        No matching orders found for that search.
                       </p>
                     ) : (
                       <div className="employee-manage-list">
-                        {orders
-                          .filter((order) => {
-                            const status = (
-                              orderStatuses[order.id] ?? order.orderStatus
-                            ).toLowerCase();
-                            return status === "completed" || status === "cancelled";
-                          })
-                          .map((order) => (
-                            <article
-                              key={order.id}
-                              className="employee-manage-row"
-                              style={{ cursor: "pointer" }}
-                              onClick={() => handleSelectOrderForRefund(order.id)}
-                            >
-                              <p>
-                                <strong>Order #{order.id}</strong>
-                              </p>
-                              <p>
-                                <strong>Customer:</strong> {order.firstName} {order.lastName}
-                              </p>
-                              <p>
-                                <strong>Location:</strong> {order.location}
-                              </p>
-                              <p>
-                                <strong>Pickup:</strong> {order.pickupMethod}
-                              </p>
-                              <p>
-                                <strong>Status:</strong>{" "}
-                                {orderStatuses[order.id] ?? order.orderStatus}
-                              </p>
-                            </article>
-                          ))}
+                        {filteredRefundOrders.map((order) => (
+                          <article
+                            key={order.id}
+                            className="employee-manage-row"
+                            style={{ cursor: "pointer" }}
+                            onClick={() => handleSelectOrderForRefund(order.id)}
+                          >
+                            <p>
+                              <strong>Order #{order.id}</strong>
+                            </p>
+                            <p>
+                              <strong>Customer:</strong> {order.firstName} {order.lastName}
+                            </p>
+                            <p>
+                              <strong>Phone:</strong> {order.phone || "N/A"}
+                            </p>
+                            <p>
+                              <strong>Location:</strong> {order.location}
+                            </p>
+                            <p>
+                              <strong>Pickup:</strong> {order.pickupMethod}
+                            </p>
+                            <p>
+                              <strong>Status:</strong>{" "}
+                              {orderStatuses[order.id] ?? order.orderStatus}
+                            </p>
+                          </article>
+                        ))}
                       </div>
                     )}
                   </>
@@ -1564,22 +1988,6 @@ export default function EmployeeDashboard({
 
             {refundModalView === "detail" && selectedRefundOrder ? (
               <>
-                {refundSuccessMessage ? (
-                  <p
-                    className="checkout-success"
-                    style={{
-                      marginBottom: "1rem",
-                      padding: "0.75rem",
-                      backgroundColor: "#d4edda",
-                      border: "1px solid #c3e6cb",
-                      borderRadius: "4px",
-                      color: "#155724",
-                    }}
-                  >
-                    {refundSuccessMessage}
-                  </p>
-                ) : null}
-
                 <div className="employee-order-detail-meta">
                   <p>
                     <strong>Order #:</strong> {selectedRefundOrder.id}
@@ -1611,9 +2019,9 @@ export default function EmployeeDashboard({
                     type="button"
                     className="employee-confirm-btn"
                     onClick={handleRefundClick}
-                    disabled={!!refundSuccessMessage}
+                    disabled={isRefundingOrder}
                   >
-                    Refund Order
+                    {isRefundingOrder ? "Refunding..." : "Refund Order"}
                   </button>
                   <button
                     type="button"
@@ -1639,9 +2047,12 @@ export default function EmployeeDashboard({
               <button
                 type="button"
                 className="employee-confirm-btn"
-                onClick={confirmRefund}
+                onClick={() => {
+                  void confirmRefund();
+                }}
+                disabled={isRefundingOrder}
               >
-                Confirm Refund
+                {isRefundingOrder ? "Refunding..." : "Confirm Refund"}
               </button>
 
               <button
@@ -1652,6 +2063,16 @@ export default function EmployeeDashboard({
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {refundSuccessToastMessage ? (
+        <div className="employee-refund-success-toast" role="status" aria-live="polite">
+          <div className="checkout-success employee-refund-success-content">
+            <CheckCircle2 size={64} strokeWidth={2.2} className="checkout-success-icon" />
+            <h3>Refund Processed Successfully</h3>
+            <p className="checkout-success-copy">{refundSuccessToastMessage}</p>
           </div>
         </div>
       ) : null}
@@ -1734,17 +2155,16 @@ export default function EmployeeDashboard({
                   />
                 </div>
 
-                <select
+                <RoundedSelect
                   className="employee-search"
                   value={newEmployeeRole}
-                  onChange={(event) =>
-                    setNewEmployeeRole(event.target.value as "Admin" | "Employee")
+                  onChange={(nextRole) =>
+                    setNewEmployeeRole(nextRole as "Admin" | "Employee")
                   }
+                  options={staffRoleOptions}
                   disabled={isSavingEmployee}
-                >
-                  <option value="Admin">Admin</option>
-                  <option value="Employee">Employee</option>
-                </select>
+                  ariaLabel="New employee role"
+                />
 
                 <button
                   type="submit"
