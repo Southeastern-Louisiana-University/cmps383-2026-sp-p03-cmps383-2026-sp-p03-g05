@@ -11,4 +11,6 @@ public class OrderMenuItem
     public virtual MenuItem? MenuItem { get; set; }
 
     public int Quantity { get; set; } = 1;
+
+    public string? SpecialInstructions { get; set; }
 }

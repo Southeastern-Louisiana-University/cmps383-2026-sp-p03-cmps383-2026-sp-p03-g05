@@ -39,7 +39,7 @@ function formatPhoneNumber(value: string) {
 }
 
 export default function SignUpScreen() {
-  const { signIn } = useAuth();
+  const { signIn, pendingGuestRewardPoints } = useAuth();
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [emailAddress, setEmailAddress] = useState('');
@@ -182,6 +182,11 @@ export default function SignUpScreen() {
           <ThemedText style={styles.subtitle}>
             Sign up to receive discounts, order your favorites faster and much more
           </ThemedText>
+          {pendingGuestRewardPoints > 0 ? (
+            <ThemedText style={styles.pendingRewardsText}>
+              Create your account to claim {pendingGuestRewardPoints} pending reward points.
+            </ThemedText>
+          ) : null}
 
           <View style={styles.form}>
             <View style={styles.twoColumnRow}>
@@ -417,6 +422,15 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     fontSize: 14,
     lineHeight: 20,
+  },
+  pendingRewardsText: {
+    textAlign: 'center',
+    color: BrandColors.primary,
+    marginTop: -6,
+    marginBottom: 16,
+    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 19,
   },
   logoWrap: {
     width: 110,

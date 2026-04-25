@@ -30,6 +30,7 @@ type ApiOrder = {
   orderNumber: number;
   orderedAt: string;
   itemCount?: number;
+  specialInstructions?: string[];
 };
 
 type OrderRow = {
@@ -42,6 +43,7 @@ type OrderRow = {
   orderStatus: string;
   orderedAt: string;
   itemCount: number;
+  specialInstructions: string[];
 };
 
 type LocationDto = {
@@ -70,6 +72,7 @@ type ApiStaffOrderDetailItem = {
   name: string;
   quantity: number;
   unitPrice: number;
+  specialInstructions?: string | null;
 };
 
 type ApiStaffOrderDetail = {
@@ -113,6 +116,9 @@ const orderStatusOptions = [
   "Completed",
   "Cancelled",
 ] as const;
+const orderCardStatusOptions = orderStatusOptions.filter(
+  (status) => status !== "Modified",
+);
 
 const pickupMethodOptions = ["In Store", "Drive Through"] as const;
 const closedStatuses = new Set(["completed", "cancelled"]);
@@ -314,6 +320,9 @@ export default function EmployeeDashboard({
           orderStatus: order.orderStatus,
           orderedAt: order.orderedAt,
           itemCount: typeof order.itemCount === "number" ? order.itemCount : 0,
+          specialInstructions: Array.isArray(order.specialInstructions)
+            ? order.specialInstructions
+            : [],
         }));
 
         setOrders(mappedOrders);
@@ -1131,7 +1140,7 @@ export default function EmployeeDashboard({
                       handleStatusChange(order.id, event.target.value)
                     }
                   >
-                    {orderStatusOptions.map((status) => (
+                    {orderCardStatusOptions.map((status) => (
                       <option key={status} value={status}>
                         {status}
                       </option>
@@ -1162,6 +1171,12 @@ export default function EmployeeDashboard({
                   </p>
                   <p>
                     <strong>Number of Items in Order:</strong> {order.itemCount}
+                  </p>
+                  <p className="employee-order-special-instructions">
+                    <strong>Special Instructions:</strong>{" "}
+                    {order.specialInstructions.length > 0
+                      ? order.specialInstructions.join(" | ")
+                      : "None"}
                   </p>
                 </div>
 
@@ -1253,6 +1268,13 @@ export default function EmployeeDashboard({
                           <p>
                             Qty: {item.quantity} x ${item.unitPrice.toFixed(2)}
                           </p>
+                          {item.specialInstructions &&
+                          item.specialInstructions.trim().length > 0 ? (
+                            <p>
+                              <strong>Special Instructions:</strong>{" "}
+                              {item.specialInstructions}
+                            </p>
+                          ) : null}
 
                           <div className="cart-summary-meta">
                             <span>

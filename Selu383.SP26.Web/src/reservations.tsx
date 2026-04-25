@@ -947,6 +947,7 @@ export default function ReservationsModal({
             <div className="checkout-success reservation-success reservation-success-popup">
               <CheckCircle2 size={78} strokeWidth={2.2} />
               <p>Payment processed successfully. Your reservation has been saved!</p>
+              <p>A copy of your receipt has been texted to you.</p>
             </div>
           </div>
         ) : null}

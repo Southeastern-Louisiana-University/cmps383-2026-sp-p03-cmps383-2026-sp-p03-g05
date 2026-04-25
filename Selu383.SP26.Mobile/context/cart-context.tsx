@@ -5,6 +5,7 @@ export type CartItemInput = {
   name: string;
   unitPrice: number;
   image: number;
+  specialInstructions?: string;
 };
 
 export type CartItem = CartItemInput & {
@@ -25,6 +26,7 @@ type CartContextValue = {
   incrementItem: (item: CartItemInput) => void;
   decrementItem: (itemKey: string) => void;
   removeItem: (itemKey: string) => void;
+  setItemSpecialInstructions: (itemKey: string, value: string) => void;
   clearCart: () => void;
   replaceCart: (items: ReplaceCartItemInput[]) => void;
 };
@@ -34,27 +36,25 @@ const CartContext = createContext<CartContextValue | undefined>(undefined);
 export function CartProvider({ children }: PropsWithChildren) {
   const [itemsByKey, setItemsByKey] = useState<Record<string, CartItem>>({});
 
-  const toggleCartItem = useCallback((item: CartItemInput) => {
-    setItemsByKey((previous) => {
-      if (previous[item.key]) {
-        const { [item.key]: _, ...rest } = previous;
-        return rest;
-      }
+  const normalizeSpecialInstructions = useCallback((value?: string) => {
+    if (!value) {
+      return '';
+    }
 
-      return {
-        ...previous,
-        [item.key]: { ...item, quantity: 1 },
-      };
-    });
+    return value.slice(0, 300);
   }, []);
 
-  const incrementItem = useCallback((item: CartItemInput) => {
+  const toggleCartItem = useCallback((item: CartItemInput) => {
     setItemsByKey((previous) => {
       const existing = previous[item.key];
       if (!existing) {
         return {
           ...previous,
-          [item.key]: { ...item, quantity: 1 },
+          [item.key]: {
+            ...item,
+            specialInstructions: normalizeSpecialInstructions(item.specialInstructions),
+            quantity: 1,
+          },
         };
       }
 
@@ -66,7 +66,31 @@ export function CartProvider({ children }: PropsWithChildren) {
         },
       };
     });
-  }, []);
+  }, [normalizeSpecialInstructions]);
+
+  const incrementItem = useCallback((item: CartItemInput) => {
+    setItemsByKey((previous) => {
+      const existing = previous[item.key];
+      if (!existing) {
+        return {
+          ...previous,
+          [item.key]: {
+            ...item,
+            specialInstructions: normalizeSpecialInstructions(item.specialInstructions),
+            quantity: 1,
+          },
+        };
+      }
+
+      return {
+        ...previous,
+        [item.key]: {
+          ...existing,
+          quantity: existing.quantity + 1,
+        },
+      };
+    });
+  }, [normalizeSpecialInstructions]);
 
   const decrementItem = useCallback((itemKey: string) => {
     setItemsByKey((previous) => {
@@ -101,6 +125,26 @@ export function CartProvider({ children }: PropsWithChildren) {
     });
   }, []);
 
+  const setItemSpecialInstructions = useCallback(
+    (itemKey: string, value: string) => {
+      setItemsByKey((previous) => {
+        const existing = previous[itemKey];
+        if (!existing) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [itemKey]: {
+            ...existing,
+            specialInstructions: normalizeSpecialInstructions(value),
+          },
+        };
+      });
+    },
+    [normalizeSpecialInstructions]
+  );
+
   const clearCart = useCallback(() => {
     setItemsByKey({});
   }, []);
@@ -126,13 +170,14 @@ export function CartProvider({ children }: PropsWithChildren) {
           name: item.name,
           unitPrice: item.unitPrice,
           image: item.image,
+          specialInstructions: normalizeSpecialInstructions(item.specialInstructions),
           quantity,
         };
       });
 
       return next;
     });
-  }, []);
+  }, [normalizeSpecialInstructions]);
 
   const cartItems = useMemo(() => Object.values(itemsByKey), [itemsByKey]);
 
@@ -167,10 +212,24 @@ export function CartProvider({ children }: PropsWithChildren) {
       incrementItem,
       decrementItem,
       removeItem,
+      setItemSpecialInstructions,
       clearCart,
       replaceCart,
     }),
-    [cartCount, cartItems, subtotal, isInCart, getItemQuantity, toggleCartItem, incrementItem, decrementItem, removeItem, clearCart, replaceCart]
+    [
+      cartCount,
+      cartItems,
+      subtotal,
+      isInCart,
+      getItemQuantity,
+      toggleCartItem,
+      incrementItem,
+      decrementItem,
+      removeItem,
+      setItemSpecialInstructions,
+      clearCart,
+      replaceCart,
+    ]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

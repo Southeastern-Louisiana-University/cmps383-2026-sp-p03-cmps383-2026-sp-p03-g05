@@ -1,8 +1,8 @@
 import { Image } from 'expo-image';
-import { Square, SquareCheck } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { AddToCartButton } from '@/components/ui/add-to-cart-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useCart } from '@/context/cart-context';
@@ -217,7 +217,7 @@ const normalizeMenuItemName = (value: string) => {
 const parsePrice = (value: string) => Number.parseFloat(value.replace(/[^0-9.]/g, '')) || 0;
 
 export default function MenuScreen() {
-  const { isInCart, toggleCartItem } = useCart();
+  const { getItemQuantity, toggleCartItem } = useCart();
   const [menuSections, setMenuSections] = useState<MenuSection[]>(
     fallbackMenuSections.map((section) => ({ title: section.title, items: [...section.items] }))
   );
@@ -310,19 +310,29 @@ export default function MenuScreen() {
 
               <View style={styles.list}>
                 {section.items.map((item) => {
-                  const isSelected = isInCart(item.name);
+                  const quantity = getItemQuantity(item.name);
+                  const isSelected = quantity > 0;
                   return (
                     <View key={item.name} style={styles.itemCard}>
                       <View style={styles.itemRow}>
-                        <Image source={item.image} style={styles.itemImage} contentFit="cover" transition={120} />
+                        <View style={styles.itemImageWrap}>
+                          <Image source={item.image} style={styles.itemImage} contentFit="cover" transition={120} />
+                          {quantity > 0 ? (
+                            <View style={styles.itemQuantityBadge}>
+                              <ThemedText style={styles.itemQuantityBadgeText}>x{quantity}</ThemedText>
+                            </View>
+                          ) : null}
+                        </View>
                         <View style={styles.itemDetails}>
                           <View style={styles.itemTopRow}>
                             <ThemedText style={styles.itemName}>{item.name}</ThemedText>
                             <ThemedText style={styles.itemPrice}>{item.price}</ThemedText>
                           </View>
                           <ThemedText style={styles.itemDescription}>{item.description}</ThemedText>
-                          <Pressable
-                            style={({ pressed }) => [styles.itemToggleButton, pressed && styles.itemToggleButtonPressed]}
+                          <AddToCartButton
+                            style={styles.itemToggleButton}
+                            pressedStyle={styles.itemToggleButtonPressed}
+                            isSelected={isSelected}
                             onPress={() =>
                               toggleCartItem({
                                 key: item.name,
@@ -331,14 +341,8 @@ export default function MenuScreen() {
                                 image: item.image,
                               })
                             }
-                            accessibilityRole="button"
-                            accessibilityLabel={`${isSelected ? 'Remove' : 'Add'} ${item.name} ${isSelected ? 'from' : 'to'} cart`}>
-                            {isSelected ? (
-                              <SquareCheck color={BrandColors.primary} size={20} />
-                            ) : (
-                              <Square color={BrandColors.primary} size={20} />
-                            )}
-                          </Pressable>
+                            accessibilityLabel={`${isSelected ? 'Add another' : 'Add'} ${item.name} to cart`}
+                          />
                         </View>
                       </View>
                     </View>
@@ -403,11 +407,34 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
   },
-  itemImage: {
+  itemImageWrap: {
+    position: 'relative',
     width: 108,
     height: 108,
+  },
+  itemImage: {
+    width: '100%',
+    height: '100%',
     borderRadius: 10,
     backgroundColor: '#f2f2f2',
+  },
+  itemQuantityBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    minWidth: 26,
+    height: 18,
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    backgroundColor: '#0d8a66',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemQuantityBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
   },
   itemDetails: {
     flex: 1,
@@ -436,9 +463,10 @@ const styles = StyleSheet.create({
   itemToggleButton: {
     alignSelf: 'flex-end',
     marginTop: 4,
-    padding: 2,
+    width: 28,
+    height: 28,
   },
   itemToggleButtonPressed: {
-    opacity: 0.72,
+    opacity: 0.82,
   },
 });

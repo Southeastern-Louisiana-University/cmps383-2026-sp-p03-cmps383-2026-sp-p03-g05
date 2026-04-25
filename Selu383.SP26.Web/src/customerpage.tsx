@@ -1,4 +1,4 @@
-import { HeartOff, RefreshCw, Square, SquareCheck } from "lucide-react";
+import { HeartOff, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 type FeaturedMenuItem = {
@@ -48,7 +48,7 @@ type CustomerPageProps = {
   userName: string;
   pridePoints: number;
   featuredItems: FeaturedMenuItem[];
-  isInCart: (itemName: string) => boolean;
+  getCartQuantity: (itemName: string) => number;
   onToggleCartItem: (itemName: string) => void;
   onOrderAgain: (order: OrderHistoryDto) => void;
   buildApiUrl: (path: string) => string;
@@ -58,6 +58,25 @@ type CustomerPageProps = {
 const levels = [1, 2, 3, 4, 5];
 const emptyFavoriteSlots = [0, 1, 2];
 const centralTimeZone = "America/Chicago";
+
+const playAddToCartBounce = (button: HTMLButtonElement) => {
+  if (typeof button.animate !== "function") {
+    return;
+  }
+
+  button.animate(
+    [
+      { transform: "scale(1)" },
+      { transform: "scale(0.86)" },
+      { transform: "scale(1.08)" },
+      { transform: "scale(1)" },
+    ],
+    {
+      duration: 170,
+      easing: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+    },
+  );
+};
 
 const getCompletedLevels = (pridePoints: number) => {
   if (pridePoints <= 0) {
@@ -134,7 +153,7 @@ export default function CustomerPage({
   userName,
   pridePoints,
   featuredItems,
-  isInCart,
+  getCartQuantity,
   onToggleCartItem,
   onOrderAgain,
   buildApiUrl,
@@ -408,21 +427,30 @@ export default function CustomerPage({
             <h2>FEATURED ITEMS</h2>
             <div className="customer-featured-grid">
               {featuredItems.map((item) => {
-                const selected = isInCart(item.name);
+                const quantity = getCartQuantity(item.name);
+                const selected = quantity > 0;
 
                 return (
                   <article key={item.name} className="customer-featured-card">
                     <div className="customer-featured-image-wrap">
                       <img src={item.image} alt={item.name} className="customer-featured-image" />
+                      {quantity > 0 ? (
+                        <span className="customer-featured-quantity-badge">
+                          x{quantity}
+                        </span>
+                      ) : null}
                       <button
                         type="button"
-                        className="customer-featured-toggle"
-                        onClick={() => onToggleCartItem(item.name)}
-                        aria-label={`${selected ? "Remove" : "Add"} ${item.name} ${
-                          selected ? "from" : "to"
-                        } cart`}
+                        className={`customer-featured-toggle ${
+                          selected ? "in-cart" : ""
+                        }`}
+                        onClick={(event) => {
+                          playAddToCartBounce(event.currentTarget);
+                          onToggleCartItem(item.name);
+                        }}
+                        aria-label={`${selected ? "Add another" : "Add"} ${item.name} to cart`}
                       >
-                        {selected ? <SquareCheck size={20} /> : <Square size={20} />}
+                        <Plus size={20} />
                       </button>
                     </div>
                     <div className="customer-featured-meta">

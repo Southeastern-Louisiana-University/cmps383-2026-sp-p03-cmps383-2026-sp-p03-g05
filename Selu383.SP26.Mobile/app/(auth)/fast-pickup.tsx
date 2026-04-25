@@ -1,25 +1,33 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowLeft, Check, CheckCircle2, ChevronDown, Square, SquareCheck, Utensils, X } from 'lucide-react-native';
+import { ArrowLeft, Check, CheckCircle2, ChevronDown, Minus, NotebookPen, Plus, ShoppingCart, X } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Keyboard,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AddToCartButton } from '@/components/ui/add-to-cart-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/auth-context';
+import { useCart } from '@/context/cart-context';
 import { BrandColors } from '@/constants/theme';
-import {
-  locationsApi,
-  menuItemsApi,
-  ordersApi,
-  usersApi,
-  type FastOrderUserLookupDto,
-  type LocationDto,
-  type MenuItemDto,
-} from '@/lib/api';
+import { locationsApi, menuItemsApi, ordersApi, type LocationDto, type MenuItemDto } from '@/lib/api';
 
 const pickupOptions = ['In Store', 'Drive Through'] as const;
-const rewardsCounterDurationMs = 1200;
+const orderProcessingMinimumMs = 700;
+const successRedirectDelayMs = 2600;
 
 const paymentMethodOptions = [
   {
@@ -45,12 +53,10 @@ const paymentMethodOptions = [
 ] as const;
 
 type DisplayMenuItem = {
-  menuItemId?: number;
   name: string;
   description: string;
   price: string;
   image: number;
-  type: string;
 };
 
 type MenuSection = {
@@ -58,12 +64,8 @@ type MenuSection = {
   items: DisplayMenuItem[];
 };
 
-type SelectedMenuItem = {
-  menuItemId?: number;
-  name: string;
-  quantity: number;
-  unitPrice: number;
-  image: number;
+type ApiDisplayMenuItem = DisplayMenuItem & {
+  type: string;
 };
 
 type DropdownOption = {
@@ -88,7 +90,6 @@ const drinks: DisplayMenuItem[] = [
     description: 'Espresso and milk served over ice for a refreshing coffee drink.',
     price: '$5.50',
     image: require('@/assets/images/iced late.png'),
-    type: 'Drink',
   },
   {
     name: 'Supernova',
@@ -96,7 +97,6 @@ const drinks: DisplayMenuItem[] = [
       'A unique coffee blend with a complex, balanced profile and subtle sweetness. Delicious as espresso or paired with milk.',
     price: '$7.95',
     image: require('@/assets/images/supernova.png'),
-    type: 'Drink',
   },
   {
     name: 'Roaring Frappe',
@@ -104,28 +104,24 @@ const drinks: DisplayMenuItem[] = [
       'Cold brew, milk, and ice blended together with a signature syrup or flavor, topped with whipped cream.',
     price: '$6.20',
     image: require('@/assets/images/roaring frappe.png'),
-    type: 'Drink',
   },
   {
     name: 'Black & White Cold Brew',
     description: 'Cold brew made with both dark and light roast beans, finished with a drizzle of condensed milk.',
     price: '$5.15',
     image: require('@/assets/images/black white cold brew.png'),
-    type: 'Drink',
   },
   {
     name: 'Strawberry Limeade',
     description: 'Fresh lime juice blended with strawberry puree for a refreshing, tangy drink.',
     price: '$5.00',
     image: require('@/assets/images/strawberry limeade.png'),
-    type: 'Drink',
   },
   {
     name: 'Shaken Lemonade',
     description: 'Fresh lemon juice and simple syrup vigorously shaken for a bright, refreshing lemonade.',
     price: '$5.00',
     image: require('@/assets/images/shaken lemonade.png'),
-    type: 'Drink',
   },
 ];
 
@@ -135,49 +131,42 @@ const sweetCrepes: DisplayMenuItem[] = [
     description: 'A sweet crepe drizzled with Mannino honey and topped with mixed berries.',
     price: '$10.00',
     image: require('@/assets/images/mannino honey crepe.png'),
-    type: 'Food',
   },
   {
     name: 'Downtowner',
     description: "Strawberries and bananas wrapped in a crepe, finished with Nutella and Hershey's chocolate sauce.",
     price: '$10.75',
     image: require('@/assets/images/downtowner.png'),
-    type: 'Food',
   },
   {
     name: 'Funky Monkey',
     description: 'Nutella and bananas wrapped in a crepe, served with whipped cream.',
     price: '$10.00',
     image: require('@/assets/images/funky monkey.png'),
-    type: 'Food',
   },
   {
     name: "Le S'mores",
     description: 'Marshmallow cream and chocolate sauce inside a crepe, topped with graham cracker crumbs.',
     price: '$9.50',
     image: require('@/assets/images/le smores.png'),
-    type: 'Food',
   },
   {
     name: 'Strawberry Fields',
     description: "Fresh strawberries with Hershey's chocolate drizzle and a dusting of powdered sugar.",
     price: '$10.00',
     image: require('@/assets/images/strawberry fields.png'),
-    type: 'Food',
   },
   {
     name: 'Bonjour',
     description: 'A sweet crepe filled with syrup and cinnamon, finished with powdered sugar.',
     price: '$8.50',
     image: require('@/assets/images/bonjour.png'),
-    type: 'Food',
   },
   {
     name: 'Banana Foster',
     description: 'Bananas with cinnamon in a crepe, topped with a generous drizzle of caramel sauce.',
     price: '$8.95',
     image: require('@/assets/images/banana foster.png'),
-    type: 'Food',
   },
 ];
 
@@ -187,49 +176,42 @@ const savoryCrepes: DisplayMenuItem[] = [
     description: 'Scrambled eggs and melted mozzarella cheese wrapped in a crepe.',
     price: '$5.00',
     image: require('@/assets/images/matts scrambled eggs.png'),
-    type: 'Food',
   },
   {
     name: 'Meanie Mushroom',
     description: 'Sauteed mushrooms, mozzarella, tomato, and bacon inside a delicate crepe.',
     price: '$10.50',
     image: require('@/assets/images/meanie mushroom.png'),
-    type: 'Food',
   },
   {
     name: 'Turkey Club',
     description: 'Sliced turkey, bacon, spinach, and tomato wrapped in a savory crepe.',
     price: '$10.50',
     image: require('@/assets/images/turkey club.png'),
-    type: 'Food',
   },
   {
     name: 'Green Machine',
     description: 'Spinach, artichokes, and mozzarella cheese inside a fresh crepe.',
     price: '$10.00',
     image: require('@/assets/images/green machine.png'),
-    type: 'Food',
   },
   {
     name: 'Perfect Pair',
     description: 'A unique combination of bacon and Nutella wrapped in a crepe.',
     price: '$10.00',
     image: require('@/assets/images/perfect pair.png'),
-    type: 'Food',
   },
   {
     name: 'Crepe Fromage',
     description: 'A savory crepe filled with a blend of cheeses.',
     price: '$8.00',
     image: require('@/assets/images/crepe fromage.png'),
-    type: 'Food',
   },
   {
     name: 'Farmers Market Crepe',
     description: 'Turkey, spinach, and mozzarella wrapped in a savory crepe.',
     price: '$10.50',
     image: require('@/assets/images/farmers market.png'),
-    type: 'Food',
   },
 ];
 
@@ -239,53 +221,67 @@ const bagels: DisplayMenuItem[] = [
     description: 'Cream cheese, salmon, spinach, and a fried egg served on a freshly toasted bagel.',
     price: '$14.00',
     image: require('@/assets/images/travis special.png'),
-    type: 'Food',
   },
   {
     name: 'Creme Brulagel',
     description: 'A toasted bagel with a caramelized sugar crust inspired by creme brulee, served with cream cheese.',
     price: '$8.00',
     image: require('@/assets/images/creme brulagle.png'),
-    type: 'Food',
   },
   {
     name: 'The Fancy One',
     description: 'Smoked salmon, cream cheese, and fresh dill on a toasted bagel.',
     price: '$13.00',
     image: require('@/assets/images/fancy one.png'),
-    type: 'Food',
   },
   {
     name: 'Breakfast Bagel',
     description: 'A toasted bagel with your choice of ham, bacon, or sausage, a fried egg, and cheddar cheese.',
     price: '$9.50',
     image: require('@/assets/images/breakfast bagel.png'),
-    type: 'Food',
   },
   {
     name: 'The Classic',
     description: 'A toasted bagel with cream cheese.',
     price: '$5.25',
     image: require('@/assets/images/classic.png'),
-    type: 'Food',
   },
 ];
 
-const fallbackMenuSections: MenuSection[] = [
+const fallbackMenuSections = [
   { title: 'Drinks', items: drinks },
   { title: 'Sweet Crepes', items: sweetCrepes },
   { title: 'Savory Crepes', items: savoryCrepes },
   { title: 'Bagels', items: bagels },
-];
+] as const;
 
-const fallbackAllItems = [...drinks, ...sweetCrepes, ...savoryCrepes, ...bagels];
-const fallbackImageByName = Object.fromEntries(fallbackAllItems.map((item) => [item.name, item.image])) as Record<
+const fallbackAllMenuItems = [...drinks, ...sweetCrepes, ...savoryCrepes, ...bagels];
+const fallbackImageByName = Object.fromEntries(fallbackAllMenuItems.map((item) => [item.name, item.image])) as Record<
   string,
   number
 >;
+
 const sweetCrepeItemNames = new Set(sweetCrepes.map((item) => item.name));
 const savoryCrepeItemNames = new Set(savoryCrepes.map((item) => item.name));
 const bagelItemNames = new Set(bagels.map((item) => item.name));
+
+const normalizeMenuItemName = (value: string) => {
+  if (value.toLowerCase().includes('brulagel')) {
+    return 'Creme Brulagel';
+  }
+
+  return value;
+};
+
+const parsePrice = (value: string) => Number.parseFloat(value.replace(/[^0-9.]/g, '')) || 0;
+
+function formatCurrency(value: number) {
+  return `$${value.toFixed(2)}`;
+}
+
+function calculateRewardPoints(orderTotal: number) {
+  return Math.max(0, Math.round(orderTotal * 10));
+}
 
 function formatPhoneNumber(value: string) {
   const digitsOnly = value.replace(/\D/g, '').slice(0, 10);
@@ -301,26 +297,6 @@ function formatPhoneNumber(value: string) {
   return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6)}`;
 }
 
-function normalizeMenuItemName(value: string) {
-  if (value.toLowerCase().includes('brulagel')) {
-    return 'Creme Brulagel';
-  }
-
-  return value;
-}
-
-function parsePrice(value: string) {
-  return Number.parseFloat(value.replace(/[^0-9.]/g, '')) || 0;
-}
-
-function formatCurrency(value: number) {
-  return `$${value.toFixed(2)}`;
-}
-
-function calculateRewardPoints(orderTotal: number) {
-  return Math.max(0, Math.round(orderTotal * 10));
-}
-
 function DropdownField({
   label,
   valueLabel,
@@ -332,23 +308,22 @@ function DropdownField({
   onSelect,
 }: DropdownFieldProps) {
   return (
-    <View style={styles.fieldBlock}>
-      <ThemedText style={styles.fieldLabel}>{label}</ThemedText>
+    <View style={styles.checkoutFieldBlock}>
+      <ThemedText style={styles.checkoutFieldLabel}>{label}</ThemedText>
       <Pressable
         style={({ pressed }) => [
           styles.dropdownTrigger,
           disabled && styles.dropdownTriggerDisabled,
           pressed && !disabled && styles.dropdownTriggerPressed,
         ]}
+        accessibilityRole="button"
         onPress={onToggle}
-        disabled={disabled}
-        accessibilityRole="button">
+        disabled={disabled}>
         <ThemedText style={[styles.dropdownValue, !valueLabel && styles.dropdownPlaceholder]}>
           {valueLabel || placeholder}
         </ThemedText>
         <ChevronDown color={BrandColors.darkAccent} size={18} />
       </Pressable>
-
       {isOpen ? (
         <View style={styles.dropdownMenu}>
           {options.length === 0 ? (
@@ -370,43 +345,48 @@ function DropdownField({
 }
 
 export default function FastPickupScreen() {
-  const { signIn, refreshSession } = useAuth();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-
-  const [locations, setLocations] = useState<LocationDto[]>([]);
-  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
-  const [locationsErrorMessage, setLocationsErrorMessage] = useState<string | null>(null);
-  const [selectedLocationId, setSelectedLocationId] = useState('');
-
-  const [pickupType, setPickupType] = useState<(typeof pickupOptions)[number]>('In Store');
-  const [activeDropdown, setActiveDropdown] = useState<'location' | 'pickup' | null>(null);
+  const insets = useSafeAreaInsets();
+  const { queuePendingGuestCheckout } = useAuth();
+  const { cartCount, cartItems, subtotal, clearCart, getItemQuantity, toggleCartItem, incrementItem, decrementItem, removeItem, setItemSpecialInstructions } =
+    useCart();
 
   const [menuSections, setMenuSections] = useState<MenuSection[]>(
     fallbackMenuSections.map((section) => ({ title: section.title, items: [...section.items] }))
   );
   const [isLoadingMenuItems, setIsLoadingMenuItems] = useState(false);
   const [menuItemsError, setMenuItemsError] = useState<string | null>(null);
-  const [isMenuModalVisible, setMenuModalVisible] = useState(false);
 
-  const [selectedMenuItems, setSelectedMenuItems] = useState<Record<string, SelectedMenuItem>>({});
+  const [isCartModalVisible, setCartModalVisible] = useState(false);
+  const [isCheckoutModalVisible, setCheckoutModalVisible] = useState(false);
+  const [openInstructionEditorsByKey, setOpenInstructionEditorsByKey] = useState<Record<string, boolean>>({});
+
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+
+  const [locations, setLocations] = useState<LocationDto[]>([]);
+  const [isLoadingLocations, setLoadingLocations] = useState(false);
+  const [locationsErrorMessage, setLocationsErrorMessage] = useState<string | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [pickupType, setPickupType] = useState<(typeof pickupOptions)[number]>('In Store');
   const [paymentMethod, setPaymentMethod] = useState('');
+  const [activeDropdown, setActiveDropdown] = useState<'location' | 'pickup' | null>(null);
 
-  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [isSubmittingOrder, setSubmittingOrder] = useState(false);
   const [orderErrorMessage, setOrderErrorMessage] = useState<string | null>(null);
-  const [orderModalStage, setOrderModalStage] = useState<'hidden' | 'loading' | 'success' | 'rewards'>('hidden');
+  const [orderModalStage, setOrderModalStage] = useState<'hidden' | 'loading' | 'success'>('hidden');
   const [rewardPointsEarned, setRewardPointsEarned] = useState(0);
-  const [rewardCounter, setRewardCounter] = useState(0);
-  const [matchedLookupUser, setMatchedLookupUser] = useState<FastOrderUserLookupDto | null>(null);
-  const [claimUserName, setClaimUserName] = useState('');
-  const [claimPassword, setClaimPassword] = useState('');
-  const [claimErrorMessage, setClaimErrorMessage] = useState<string | null>(null);
-  const [isClaimingPoints, setIsClaimingPoints] = useState(false);
-  const [pointsClaimedMessage, setPointsClaimedMessage] = useState<string | null>(null);
 
-  const stageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rewardCounterTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const badgeScale = useRef(new Animated.Value(1)).current;
+  const previousCartCountRef = useRef<number | null>(null);
+
+  const selectedItemCount = useMemo(
+    () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
+    [cartItems]
+  );
+
+  const visibleMenuSections = useMemo(() => menuSections.filter((section) => section.items.length > 0), [menuSections]);
 
   const locationOptions = useMemo<DropdownOption[]>(
     () =>
@@ -422,133 +402,64 @@ export default function FastPickupScreen() {
     [locationOptions, selectedLocationId]
   );
 
-  const selectedMenuItemsList = useMemo(() => Object.values(selectedMenuItems), [selectedMenuItems]);
-  const selectedItemCount = useMemo(
-    () => selectedMenuItemsList.reduce((sum, item) => sum + item.quantity, 0),
-    [selectedMenuItemsList]
-  );
-  const orderTotal = useMemo(
-    () => selectedMenuItemsList.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0),
-    [selectedMenuItemsList]
-  );
-  const visibleMenuSections = useMemo(
-    () => menuSections.filter((section) => section.items.length > 0),
-    [menuSections]
-  );
-
   const phoneDigits = phoneNumber.replace(/\D/g, '');
-  const canSubmitOrder =
-    firstName.trim().length > 0 &&
-    lastName.trim().length > 0 &&
-    phoneDigits.length === 10 &&
-    !!selectedLocationId &&
-    selectedItemCount > 0 &&
-    !!paymentMethod &&
-    !isSubmittingOrder;
 
-  const clearModalTimers = () => {
-    if (stageTimerRef.current) {
-      clearTimeout(stageTimerRef.current);
-      stageTimerRef.current = null;
-    }
+  useEffect(() => {
+    const previous = previousCartCountRef.current;
+    previousCartCountRef.current = cartCount;
 
-    if (rewardCounterTimerRef.current) {
-      clearInterval(rewardCounterTimerRef.current);
-      rewardCounterTimerRef.current = null;
-    }
-  };
-
-  const hideOrderModal = () => {
-    clearModalTimers();
-    setOrderModalStage('hidden');
-    setRewardPointsEarned(0);
-    setRewardCounter(0);
-    setMatchedLookupUser(null);
-    setClaimUserName('');
-    setClaimPassword('');
-    setClaimErrorMessage(null);
-    setIsClaimingPoints(false);
-    setPointsClaimedMessage(null);
-  };
-
-  const handleOrderModalClose = () => {
-    const shouldReturnToLanding = orderModalStage === 'rewards';
-    hideOrderModal();
-
-    if (shouldReturnToLanding) {
-      router.replace('/(auth)/login');
-    }
-  };
-
-  const startRewardCounterAnimation = (pointsToAdd: number) => {
-    setRewardCounter(0);
-
-    if (rewardCounterTimerRef.current) {
-      clearInterval(rewardCounterTimerRef.current);
-      rewardCounterTimerRef.current = null;
-    }
-
-    if (pointsToAdd <= 0) {
+    if (previous === null || previous === cartCount) {
       return;
     }
 
-    const startedAt = Date.now();
-    rewardCounterTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - startedAt;
-      const progress = Math.min(1, elapsed / rewardsCounterDurationMs);
-      const nextValue = Math.floor(pointsToAdd * progress);
-      setRewardCounter(nextValue);
-
-      if (progress >= 1) {
-        setRewardCounter(pointsToAdd);
-        if (rewardCounterTimerRef.current) {
-          clearInterval(rewardCounterTimerRef.current);
-          rewardCounterTimerRef.current = null;
-        }
-      }
-    }, 30);
-  };
+    badgeScale.stopAnimation();
+    badgeScale.setValue(1);
+    Animated.sequence([
+      Animated.timing(badgeScale, {
+        toValue: 1.22,
+        duration: 70,
+        useNativeDriver: true,
+      }),
+      Animated.timing(badgeScale, {
+        toValue: 0.94,
+        duration: 50,
+        useNativeDriver: true,
+      }),
+      Animated.timing(badgeScale, {
+        toValue: 1,
+        duration: 50,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [badgeScale, cartCount]);
 
   useEffect(() => {
     return () => {
-      clearModalTimers();
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
     };
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
+    const validKeys = new Set(cartItems.map((item) => item.key));
 
-    const loadLocations = async () => {
-      setIsLoadingLocations(true);
-      setLocationsErrorMessage(null);
+    setOpenInstructionEditorsByKey((previous) => {
+      let hasChanges = false;
+      const next: Record<string, boolean> = {};
 
-      try {
-        const locationResults = await locationsApi.list();
-        if (!isMounted) {
-          return;
+      Object.entries(previous).forEach(([itemKey, isOpen]) => {
+        if (validKeys.has(itemKey)) {
+          next[itemKey] = isOpen;
+        } else {
+          hasChanges = true;
         }
+      });
 
-        setLocations(locationResults);
-      } catch (error) {
-        if (!isMounted) {
-          return;
-        }
-
-        const message = error instanceof Error ? error.message : 'Unable to load locations.';
-        setLocationsErrorMessage(message);
-      } finally {
-        if (isMounted) {
-          setIsLoadingLocations(false);
-        }
-      }
-    };
-
-    void loadLocations();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+      return hasChanges ? next : previous;
+    });
+  }, [cartItems]);
 
   useEffect(() => {
     let isMounted = true;
@@ -563,12 +474,11 @@ export default function FastPickupScreen() {
           return;
         }
 
-        const mappedItems: DisplayMenuItem[] = apiItems.map((item: MenuItemDto) => {
+        const mappedItems: ApiDisplayMenuItem[] = apiItems.map((item: MenuItemDto) => {
           const normalizedName = normalizeMenuItemName(item.itemName);
           const fallbackImage = fallbackImageByName[normalizedName];
 
           return {
-            menuItemId: item.id,
             name: normalizedName,
             description: item.description,
             price: `$${item.price.toFixed(2)}`,
@@ -584,19 +494,17 @@ export default function FastPickupScreen() {
         const bagelsFromApi = foodsFromApi.filter((item) => bagelItemNames.has(item.name));
         const otherFoodsFromApi = foodsFromApi.filter(
           (item) =>
-            !sweetCrepeItemNames.has(item.name) && !savoryCrepeItemNames.has(item.name) && !bagelItemNames.has(item.name)
+            !sweetCrepeItemNames.has(item.name) &&
+            !savoryCrepeItemNames.has(item.name) &&
+            !bagelItemNames.has(item.name)
         );
 
-        const nextSections: MenuSection[] = [
+        setMenuSections([
           { title: 'Drinks', items: drinksFromApi },
           { title: 'Sweet Crepes', items: sweetFromApi },
           { title: 'Savory Crepes', items: [...savoryFromApi, ...otherFoodsFromApi] },
           { title: 'Bagels', items: bagelsFromApi },
-        ];
-
-        if (nextSections.some((section) => section.items.length > 0)) {
-          setMenuSections(nextSections);
-        }
+        ]);
       } catch (error) {
         if (!isMounted) {
           return;
@@ -618,502 +526,619 @@ export default function FastPickupScreen() {
     };
   }, []);
 
-  const toggleMenuItemSelection = (item: DisplayMenuItem) => {
-    setSelectedMenuItems((current) => {
-      if (current[item.name]) {
-        const next = { ...current };
-        delete next[item.name];
-        return next;
-      }
-
-      return {
-        ...current,
-        [item.name]: {
-          menuItemId: item.menuItemId,
-          name: item.name,
-          quantity: 1,
-          unitPrice: parsePrice(item.price),
-          image: item.image,
-        },
-      };
-    });
-    setOrderErrorMessage(null);
+  const clearOrderTimers = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
   };
 
-  const handleSignInAndClaimPoints = async () => {
-    if (isClaimingPoints || !matchedLookupUser) {
-      return;
-    }
+  const hideOrderModal = () => {
+    clearOrderTimers();
+    setOrderModalStage('hidden');
+    setRewardPointsEarned(0);
+  };
 
-    if (!claimPassword.trim()) {
-      setClaimErrorMessage('Password is required to claim points.');
-      return;
-    }
+  const toggleInstructionEditor = (itemKey: string) => {
+    setOpenInstructionEditorsByKey((previous) => ({
+      ...previous,
+      [itemKey]: !previous[itemKey],
+    }));
+  };
 
-    setIsClaimingPoints(true);
-    setClaimErrorMessage(null);
-    setPointsClaimedMessage(null);
+  const fetchLocations = async () => {
+    setLoadingLocations(true);
+    setLocationsErrorMessage(null);
 
     try {
-      const loggedInUser = await signIn(matchedLookupUser.userName, claimPassword);
+      const locationResults = await locationsApi.list();
+      setLocations(locationResults);
+      setSelectedLocationId((current) => {
+        if (current && locationResults.some((location) => String(location.id) === current)) {
+          return current;
+        }
 
-      if (rewardPointsEarned > 0) {
-        await usersApi.awardRewards(loggedInUser.id, { pointsToAdd: rewardPointsEarned });
-      }
-
-      await refreshSession();
-      setPointsClaimedMessage('Points claimed successfully.');
-
-      if (stageTimerRef.current) {
-        clearTimeout(stageTimerRef.current);
-      }
-
-      stageTimerRef.current = setTimeout(() => {
-        hideOrderModal();
-        router.replace('/(app)/home');
-      }, 900);
+        return String(locationResults[0]?.id ?? '');
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to sign in and claim points.';
-      setClaimErrorMessage(message);
+      const message = error instanceof Error ? error.message : 'Unable to load locations.';
+      setLocationsErrorMessage(message);
     } finally {
-      setIsClaimingPoints(false);
+      setLoadingLocations(false);
     }
   };
 
-  const handleOrder = async () => {
-    if (isSubmittingOrder) {
+  const handleOpenCheckout = () => {
+    if (cartItems.length === 0) {
+      return;
+    }
+
+    setCartModalVisible(false);
+    setCheckoutModalVisible(true);
+    setOrderErrorMessage(null);
+    setActiveDropdown(null);
+    void fetchLocations();
+  };
+
+  const handlePlaceOrder = async () => {
+    const requestStartedAt = Date.now();
+    const showOrderError = (message: string) => {
+      setOrderErrorMessage(message);
+      Alert.alert('Unable to place order', message);
+    };
+
+    setActiveDropdown(null);
+
+    if (isSubmittingOrder || cartItems.length === 0) {
+      if (cartItems.length === 0) {
+        showOrderError('Your cart is empty. Add items from the menu before ordering.');
+      }
       return;
     }
 
     if (!firstName.trim() || !lastName.trim()) {
-      setOrderErrorMessage('First name and last name are required.');
+      showOrderError('First name and last name are required.');
       return;
     }
 
     if (phoneDigits.length !== 10) {
-      setOrderErrorMessage('Enter a valid 10-digit phone number.');
+      showOrderError('Enter a valid 10-digit phone number.');
       return;
     }
 
     if (!selectedLocationId) {
-      setOrderErrorMessage('Please select your location.');
-      return;
-    }
-
-    if (selectedMenuItemsList.length === 0) {
-      setOrderErrorMessage('Please select at least one menu item.');
+      showOrderError('Please select your location.');
       return;
     }
 
     if (!paymentMethod) {
-      setOrderErrorMessage('Please select a payment method.');
+      showOrderError('Please select a payment method.');
       return;
     }
 
-    setIsSubmittingOrder(true);
+    setSubmittingOrder(true);
     setOrderErrorMessage(null);
-    clearModalTimers();
+    clearOrderTimers();
+    setCartModalVisible(false);
     setOrderModalStage('loading');
     setRewardPointsEarned(0);
-    setRewardCounter(0);
-    setMatchedLookupUser(null);
-    setClaimUserName('');
-    setClaimPassword('');
-    setClaimErrorMessage(null);
-    setPointsClaimedMessage(null);
 
     try {
-      let lookupMatch: FastOrderUserLookupDto | null = null;
-      try {
-        lookupMatch = await usersApi.lookupByProfile({
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          phoneNumber,
-        });
-      } catch {
-        lookupMatch = null;
-      }
-
       const selectedPaymentOption = paymentMethodOptions.find((option) => option.value === paymentMethod);
+      const orderPayload = {
+        locationId: Number(selectedLocationId),
+        pickupType,
+        paymentMethod: selectedPaymentOption?.label ?? paymentMethod,
+        total: Number(subtotal.toFixed(2)),
+        items: cartItems.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice.toFixed(2)),
+          specialInstructions:
+            item.specialInstructions && item.specialInstructions.trim().length > 0
+              ? item.specialInstructions.trim()
+              : undefined,
+        })),
+      };
+      let requiresAuthReplay = false;
 
       try {
-        await ordersApi.create({
-          locationId: Number(selectedLocationId),
-          pickupType,
-          paymentMethod: selectedPaymentOption?.label ?? paymentMethod,
-          total: Number(orderTotal.toFixed(2)),
-          items: selectedMenuItemsList.map((item) => ({
-            menuItemId: item.menuItemId,
-            name: item.name,
-            quantity: item.quantity,
-            unitPrice: Number(item.unitPrice.toFixed(2)),
-          })),
-        });
+        await ordersApi.create(orderPayload);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to place order.';
         const isUnauthorized = /unauthorized/i.test(message) || message.includes('401');
         if (!isUnauthorized) {
           throw error;
         }
+        requiresAuthReplay = true;
       }
 
-      const pointsToAdd = calculateRewardPoints(orderTotal);
-      setRewardPointsEarned(pointsToAdd);
-      setMatchedLookupUser(lookupMatch);
-      setClaimUserName(lookupMatch?.userName ?? '');
-      setClaimPassword('');
-      setClaimErrorMessage(null);
-      setPointsClaimedMessage(null);
-      setOrderModalStage('success');
-      setMenuModalVisible(false);
-      setSelectedMenuItems({});
-      setPaymentMethod('');
-      setActiveDropdown(null);
+      const pointsToAdd = calculateRewardPoints(subtotal);
+      queuePendingGuestCheckout({
+        rewardPoints: pointsToAdd,
+        orderDraft: requiresAuthReplay ? orderPayload : null,
+      });
 
-      stageTimerRef.current = setTimeout(() => {
-        setOrderModalStage('rewards');
-        startRewardCounterAnimation(pointsToAdd);
-        stageTimerRef.current = null;
-      }, 900);
+      const elapsedMs = Date.now() - requestStartedAt;
+      if (elapsedMs < orderProcessingMinimumMs) {
+        await new Promise((resolve) => setTimeout(resolve, orderProcessingMinimumMs - elapsedMs));
+      }
+
+      setOpenInstructionEditorsByKey({});
+      clearCart();
+      setRewardPointsEarned(pointsToAdd);
+      setOrderModalStage('success');
+
+      closeTimerRef.current = setTimeout(() => {
+        setCheckoutModalVisible(false);
+        hideOrderModal();
+        router.replace('/(auth)/login');
+        closeTimerRef.current = null;
+      }, successRedirectDelayMs);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to place order.';
-      setOrderErrorMessage(message);
+      showOrderError(message);
       setOrderModalStage('hidden');
     } finally {
-      setIsSubmittingOrder(false);
+      setSubmittingOrder(false);
     }
   };
 
   return (
     <ThemedView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 4) }]}>
         <Pressable style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]} onPress={() => router.back()}>
           <ArrowLeft color={BrandColors.darkAccent} size={18} />
-          <ThemedText style={styles.backButtonText}>Back</ThemedText>
         </Pressable>
 
+        <Image source={require('@/assets/images/logo-round.png')} style={styles.bannerLogo} contentFit="contain" />
+
+        <Pressable
+          style={({ pressed }) => [styles.cartBadge, pressed && styles.cartBadgePressed]}
+          onPress={() => setCartModalVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Shopping cart">
+          <ShoppingCart color={BrandColors.primary} size={20} />
+          <Animated.View style={[styles.cartCountBadge, { transform: [{ scale: badgeScale }] }]}>
+            <ThemedText style={styles.cartCountText}>{cartCount}</ThemedText>
+          </Animated.View>
+        </Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <ThemedText type="title" style={styles.title}>
           Fast Order
         </ThemedText>
-        <ThemedText style={styles.subtitle}>Build your order quickly and checkout in one flow.</ThemedText>
+        <ThemedText style={styles.subtitle}>
+          Browse the full menu, add items with +, then continue to the same checkout flow.
+        </ThemedText>
 
-        <View style={styles.card}>
-          <View style={styles.twoColumnRow}>
-            <View style={[styles.fieldGroup, styles.twoColumnField]}>
-              <ThemedText style={styles.fieldLabel}>First Name</ThemedText>
-              <TextInput
-                value={firstName}
-                onChangeText={setFirstName}
-                autoCapitalize="words"
-                editable={!isSubmittingOrder}
-                placeholder="First name"
-                placeholderTextColor={BrandColors.darkAccent}
-                style={styles.input}
-              />
-            </View>
-
-            <View style={[styles.fieldGroup, styles.twoColumnField]}>
-              <ThemedText style={styles.fieldLabel}>Last Name</ThemedText>
-              <TextInput
-                value={lastName}
-                onChangeText={setLastName}
-                autoCapitalize="words"
-                editable={!isSubmittingOrder}
-                placeholder="Last name"
-                placeholderTextColor={BrandColors.darkAccent}
-                style={styles.input}
-              />
-            </View>
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <ThemedText style={styles.fieldLabel}>Phone Number</ThemedText>
-            <TextInput
-              value={phoneNumber}
-              onChangeText={(value) => setPhoneNumber(formatPhoneNumber(value))}
-              keyboardType="phone-pad"
-              maxLength={12}
-              editable={!isSubmittingOrder}
-              placeholder="555-123-4567"
-              placeholderTextColor={BrandColors.darkAccent}
-              style={styles.input}
-            />
-          </View>
-
-          <DropdownField
-            label="Select your location"
-            valueLabel={selectedLocationLabel}
-            placeholder={isLoadingLocations ? 'Loading locations...' : 'Choose location'}
-            options={locationOptions}
-            isOpen={activeDropdown === 'location'}
-            disabled={isLoadingLocations || locationOptions.length === 0 || isSubmittingOrder}
-            onToggle={() => setActiveDropdown((current) => (current === 'location' ? null : 'location'))}
-            onSelect={(value) => {
-              setSelectedLocationId(value);
-              setActiveDropdown(null);
-            }}
-          />
-          {locationsErrorMessage ? <ThemedText style={styles.errorText}>{locationsErrorMessage}</ThemedText> : null}
-
-          <DropdownField
-            label="Pickup"
-            valueLabel={pickupType}
-            placeholder="Choose pickup"
-            options={pickupOptions.map((option) => ({ value: option, label: option }))}
-            isOpen={activeDropdown === 'pickup'}
-            disabled={isSubmittingOrder}
-            onToggle={() => setActiveDropdown((current) => (current === 'pickup' ? null : 'pickup'))}
-            onSelect={(value) => {
-              setPickupType(value as (typeof pickupOptions)[number]);
-              setActiveDropdown(null);
-            }}
-          />
-
-          <View style={styles.fieldBlock}>
-            <ThemedText style={styles.fieldLabel}>Menu</ThemedText>
-            <Pressable
-              style={({ pressed }) => [styles.viewMenuButton, pressed && styles.viewMenuButtonPressed]}
-              onPress={() => {
-                setActiveDropdown(null);
-                setMenuModalVisible(true);
-              }}
-              accessibilityRole="button">
-              <Utensils color={BrandColors.primary} size={16} />
-              <ThemedText style={styles.viewMenuButtonText}>View Menu</ThemedText>
-            </Pressable>
-            <ThemedText style={styles.helperText}>
-              {selectedItemCount > 0
-                ? `${selectedItemCount} item${selectedItemCount === 1 ? '' : 's'} selected`
-                : 'No items selected yet.'}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryCopy}>
+            <ThemedText style={styles.summaryTitle}>
+              {selectedItemCount} item{selectedItemCount === 1 ? '' : 's'} in cart
             </ThemedText>
-            {menuItemsError ? <ThemedText style={styles.errorText}>{menuItemsError}</ThemedText> : null}
+            <ThemedText style={styles.summaryValue}>{formatCurrency(subtotal)}</ThemedText>
           </View>
-
-          <View style={styles.totalRow}>
-            <ThemedText style={styles.totalLabel}>Total</ThemedText>
-            <ThemedText style={styles.totalValue}>{formatCurrency(orderTotal)}</ThemedText>
-          </View>
-
-          <View style={styles.fieldBlock}>
-            <ThemedText style={styles.fieldLabel}>Payment</ThemedText>
-            <View style={styles.paymentOptionsRow}>
-              {paymentMethodOptions.map((option) => {
-                const isSelected = paymentMethod === option.value;
-                return (
-                  <Pressable
-                    key={option.value}
-                    style={({ pressed }) => [
-                      styles.paymentOptionButton,
-                      isSelected && styles.paymentOptionButtonSelected,
-                      pressed && !isSubmittingOrder && styles.paymentOptionButtonPressed,
-                    ]}
-                    disabled={isSubmittingOrder}
-                    onPress={() => {
-                      setPaymentMethod(option.value);
-                      setOrderErrorMessage(null);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Select ${option.label} payment`}>
-                    <Image source={option.image} style={styles.paymentOptionImage} contentFit="contain" />
-                    {isSelected ? (
-                      <View style={styles.paymentSelectedBadge}>
-                        <Check color="#ffffff" size={12} />
-                      </View>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
           <Pressable
-            style={({ pressed }) => [
-              styles.orderButton,
-              pressed && styles.orderButtonPressed,
-              !canSubmitOrder && styles.orderButtonDisabled,
-            ]}
-            disabled={!canSubmitOrder}
-            onPress={() => void handleOrder()}>
-            <ThemedText style={styles.orderButtonText}>{isSubmittingOrder ? 'Placing order...' : 'Order'}</ThemedText>
+            style={({ pressed }) => [styles.viewCartButton, pressed && styles.viewCartButtonPressed]}
+            onPress={() => setCartModalVisible(true)}>
+            <ShoppingCart color="#ffffff" size={16} />
+            <ThemedText style={styles.viewCartButtonText}>View Cart</ThemedText>
           </Pressable>
+        </View>
 
-          {orderErrorMessage ? <ThemedText style={styles.errorText}>{orderErrorMessage}</ThemedText> : null}
+        {isLoadingMenuItems ? <ThemedText style={styles.helperText}>Loading menu items...</ThemedText> : null}
+        {menuItemsError ? <ThemedText style={styles.errorText}>{menuItemsError}</ThemedText> : null}
+
+        <View style={styles.sectionList}>
+          {visibleMenuSections.map((section) => (
+            <View key={section.title} style={styles.sectionBlock}>
+              <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+                {section.title}
+              </ThemedText>
+
+              <View style={styles.list}>
+                {section.items.map((item) => {
+                  const quantity = getItemQuantity(item.name);
+                  const isSelected = quantity > 0;
+                  return (
+                    <View key={item.name} style={styles.itemCard}>
+                      <View style={styles.itemRow}>
+                        <View style={styles.itemImageWrap}>
+                          <Image source={item.image} style={styles.itemImage} contentFit="cover" transition={120} />
+                          {quantity > 0 ? (
+                            <View style={styles.itemQuantityBadge}>
+                              <ThemedText style={styles.itemQuantityBadgeText}>x{quantity}</ThemedText>
+                            </View>
+                          ) : null}
+                        </View>
+                        <View style={styles.itemDetails}>
+                          <View style={styles.itemTopRow}>
+                            <ThemedText style={styles.itemName}>{item.name}</ThemedText>
+                            <ThemedText style={styles.itemPrice}>{item.price}</ThemedText>
+                          </View>
+                          <ThemedText style={styles.itemDescription}>{item.description}</ThemedText>
+                          <AddToCartButton
+                            style={styles.itemToggleButton}
+                            pressedStyle={styles.itemToggleButtonPressed}
+                            isSelected={isSelected}
+                            onPress={() =>
+                              toggleCartItem({
+                                key: item.name,
+                                name: item.name,
+                                unitPrice: parsePrice(item.price),
+                                image: item.image,
+                              })
+                            }
+                            accessibilityLabel={`${isSelected ? 'Add another' : 'Add'} ${item.name} to cart`}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
         </View>
       </ScrollView>
 
-      <Modal visible={isMenuModalVisible} transparent animationType="fade" onRequestClose={() => setMenuModalVisible(false)}>
-        <View style={styles.menuModalOverlay}>
-          <Pressable style={styles.menuModalBackdrop} onPress={() => setMenuModalVisible(false)} />
-          <View style={styles.menuModalCard}>
-            <View style={styles.menuModalHeader}>
-              <ThemedText type="subtitle" style={styles.menuModalTitle}>
-                Menu
-              </ThemedText>
-              <Pressable style={styles.menuCloseButton} onPress={() => setMenuModalVisible(false)}>
+      <Modal visible={isCartModalVisible} transparent animationType="fade" onRequestClose={() => setCartModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setCartModalVisible(false)} />
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Cart</ThemedText>
+              <Pressable style={styles.modalCloseButton} onPress={() => setCartModalVisible(false)}>
                 <X color={BrandColors.darkAccent} size={18} />
               </Pressable>
             </View>
 
-            {isLoadingMenuItems ? (
-              <View style={styles.menuLoadingRow}>
-                <ActivityIndicator color={BrandColors.primary} />
-                <ThemedText style={styles.loadingText}>Loading menu items...</ThemedText>
+            {cartItems.length === 0 ? (
+              <View style={styles.cartEmptyState}>
+                <ThemedText style={styles.cartEmptyText}>Your cart is empty. Add items from the menu.</ThemedText>
               </View>
             ) : (
               <ScrollView
-                style={styles.menuModalBody}
-                contentContainerStyle={styles.menuModalBodyContent}
-                showsVerticalScrollIndicator={false}>
-                {visibleMenuSections.length === 0 ? (
-                  <ThemedText style={styles.menuEmptyText}>
-                    {menuItemsError ?? 'No menu items available right now.'}
-                  </ThemedText>
-                ) : (
-                  visibleMenuSections.map((section) => (
-                    <View key={section.title} style={styles.sectionBlock}>
-                      <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-                        {section.title}
-                      </ThemedText>
+                style={styles.cartItemsList}
+                contentContainerStyle={styles.cartItemsContent}
+                showsVerticalScrollIndicator
+                nestedScrollEnabled
+                scrollEnabled
+                keyboardShouldPersistTaps="handled">
+                {cartItems.map((item) => (
+                  <View key={item.key} style={styles.cartItemRow}>
+                    <Image source={item.image} style={styles.cartItemImage} contentFit="cover" />
+                    <View style={styles.cartItemBody}>
+                      <View style={styles.cartItemHead}>
+                        <ThemedText style={styles.cartItemName}>{item.name}</ThemedText>
+                        <View style={styles.cartItemActionGroup}>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.cartItemInstructionButton,
+                              item.specialInstructions && item.specialInstructions.trim().length > 0
+                                ? styles.cartItemInstructionButtonActive
+                                : null,
+                              pressed && styles.modalActionPressed,
+                            ]}
+                            onPress={() => toggleInstructionEditor(item.key)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Add special instructions for ${item.name}`}>
+                            <NotebookPen color={BrandColors.primary} size={16} />
+                          </Pressable>
+                          <Pressable style={styles.removeItemButton} onPress={() => removeItem(item.key)}>
+                            <X color="#9b2d2d" size={16} />
+                          </Pressable>
+                        </View>
+                      </View>
 
-                      <View style={styles.sectionList}>
-                        {section.items.map((item) => {
-                          const isSelected = !!selectedMenuItems[item.name];
+                      {openInstructionEditorsByKey[item.key] ? (
+                        <TextInput
+                          value={item.specialInstructions ?? ''}
+                          onChangeText={(value) => setItemSpecialInstructions(item.key, value)}
+                          placeholder="Add special instructions"
+                          placeholderTextColor="#8a827a"
+                          style={styles.specialInstructionsInput}
+                          editable={!isSubmittingOrder}
+                          maxLength={300}
+                        />
+                      ) : item.specialInstructions && item.specialInstructions.trim().length > 0 ? (
+                        <ThemedText style={styles.specialInstructionsPreview}>{item.specialInstructions.trim()}</ThemedText>
+                      ) : null}
 
-                          return (
-                            <View key={item.name} style={styles.itemCard}>
-                              <View style={styles.itemRow}>
-                                <Image source={item.image} style={styles.itemImage} contentFit="cover" transition={120} />
-                                <View style={styles.itemDetails}>
-                                  <View style={styles.itemTopRow}>
-                                    <ThemedText style={styles.itemName}>{item.name}</ThemedText>
-                                    <ThemedText style={styles.itemPrice}>{item.price}</ThemedText>
-                                  </View>
-                                  <ThemedText style={styles.itemDescription}>{item.description}</ThemedText>
-                                  <Pressable
-                                    style={({ pressed }) => [styles.itemToggleButton, pressed && styles.itemToggleButtonPressed]}
-                                    onPress={() => toggleMenuItemSelection(item)}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={`${isSelected ? 'Remove' : 'Add'} ${item.name} ${isSelected ? 'from' : 'to'} order`}>
-                                    {isSelected ? (
-                                      <SquareCheck color={BrandColors.primary} size={20} />
-                                    ) : (
-                                      <Square color={BrandColors.primary} size={20} />
-                                    )}
-                                  </Pressable>
-                                </View>
-                              </View>
-                            </View>
-                          );
-                        })}
+                      <View style={styles.cartItemMeta}>
+                        <ThemedText style={styles.cartItemPrice}>{formatCurrency(item.unitPrice * item.quantity)}</ThemedText>
+                        <View style={styles.quantityGroup}>
+                          <Pressable style={styles.quantityButton} onPress={() => decrementItem(item.key)}>
+                            <Minus color={BrandColors.primary} size={14} />
+                          </Pressable>
+                          <ThemedText style={styles.quantityText}>{item.quantity}</ThemedText>
+                          <Pressable
+                            style={styles.quantityButton}
+                            onPress={() =>
+                              incrementItem({
+                                key: item.key,
+                                name: item.name,
+                                unitPrice: item.unitPrice,
+                                image: item.image,
+                                specialInstructions: item.specialInstructions,
+                              })
+                            }>
+                            <Plus color={BrandColors.primary} size={14} />
+                          </Pressable>
+                        </View>
                       </View>
                     </View>
-                  ))
-                )}
+                  </View>
+                ))}
               </ScrollView>
             )}
 
-            <Pressable style={({ pressed }) => [styles.menuDoneButton, pressed && styles.menuDoneButtonPressed]} onPress={() => setMenuModalVisible(false)}>
-              <ThemedText style={styles.menuDoneButtonText}>Done</ThemedText>
-            </Pressable>
+            <View style={styles.subtotalRow}>
+              <ThemedText style={styles.subtotalLabel}>Total</ThemedText>
+              <ThemedText style={styles.subtotalValue}>{formatCurrency(subtotal)}</ThemedText>
+            </View>
+
+            <View style={styles.modalActionRow}>
+              <Pressable
+                style={({ pressed }) => [styles.keepShoppingButton, pressed && styles.modalActionPressed]}
+                onPress={() => setCartModalVisible(false)}>
+                <ThemedText style={styles.keepShoppingText}>Keep Shopping</ThemedText>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.checkoutButton,
+                  pressed && styles.modalActionPressed,
+                  cartItems.length === 0 && styles.disabledButton,
+                ]}
+                disabled={cartItems.length === 0}
+                onPress={handleOpenCheckout}>
+                <ThemedText style={styles.checkoutButtonText}>Checkout</ThemedText>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
 
       <Modal
-        visible={orderModalStage !== 'hidden'}
+        visible={isCheckoutModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={handleOrderModalClose}>
-        <View style={styles.orderModalOverlay}>
-          <View style={styles.orderModalCard}>
-            {orderModalStage === 'loading' ? (
-              <View style={styles.orderModalStateWrap}>
-                <ActivityIndicator color={BrandColors.primary} size="large" />
-                <ThemedText style={styles.loadingText}>Placing order...</ThemedText>
-              </View>
-            ) : null}
-
-            {orderModalStage === 'success' ? (
-              <View style={styles.orderModalStateWrap}>
-                <CheckCircle2 color={BrandColors.primary} size={72} strokeWidth={2.25} />
-                <ThemedText style={styles.successText}>Success</ThemedText>
-              </View>
-            ) : null}
-
-            {orderModalStage === 'rewards' ? (
-              <View style={styles.orderModalStateWrap}>
-                <ThemedText style={styles.rewardsHeaderText}>Contrats! you earned rewards points!</ThemedText>
-                <View style={styles.rewardsWheel}>
-                  <View style={styles.rewardsWheelInner}>
-                    <ThemedText style={styles.rewardsWheelValue}>{rewardCounter}</ThemedText>
-                  </View>
-                </View>
-                <ThemedText style={styles.rewardsEarnedText}>+{rewardPointsEarned} points</ThemedText>
-                {matchedLookupUser ? (
-                  <>
-                    <ThemedText style={styles.signupCtaText}>Sign in to claim your points.</ThemedText>
-                    <View style={styles.claimForm}>
-                      <View style={styles.fieldGroup}>
-                        <ThemedText style={styles.claimFieldLabel}>User Name</ThemedText>
-                        <TextInput
-                          value={claimUserName}
-                          editable={false}
-                          selectTextOnFocus={false}
-                          style={[styles.claimInput, styles.claimInputDisabled]}
-                        />
-                      </View>
-                      <View style={styles.fieldGroup}>
-                        <ThemedText style={styles.claimFieldLabel}>Password</ThemedText>
-                        <TextInput
-                          value={claimPassword}
-                          onChangeText={setClaimPassword}
-                          editable={!isClaimingPoints}
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          secureTextEntry
-                          placeholder="Enter password"
-                          placeholderTextColor={BrandColors.darkAccent}
-                          style={styles.claimInput}
-                        />
-                      </View>
-                    </View>
-
-                    {claimErrorMessage ? <ThemedText style={styles.errorText}>{claimErrorMessage}</ThemedText> : null}
-                    {pointsClaimedMessage ? <ThemedText style={styles.claimedSuccessText}>{pointsClaimedMessage}</ThemedText> : null}
-
-                    <Pressable
-                      style={({ pressed }) => [styles.signupButton, pressed && styles.signupButtonPressed, isClaimingPoints && styles.signupButtonDisabled]}
-                      disabled={isClaimingPoints}
-                      onPress={() => void handleSignInAndClaimPoints()}>
-                      {isClaimingPoints ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                      ) : (
-                        <ThemedText style={styles.signupButtonText}>Sign In & Claim</ThemedText>
-                      )}
-                    </Pressable>
-                  </>
-                ) : (
-                  <>
-                    <ThemedText style={styles.signupCtaText}>Sign Up to keep these reward points.</ThemedText>
-                    <Pressable
-                      style={({ pressed }) => [styles.signupButton, pressed && styles.signupButtonPressed]}
-                      onPress={() => {
-                        hideOrderModal();
-                        router.push('/(auth)/signup');
-                      }}>
-                      <ThemedText style={styles.signupButtonText}>Sign Up</ThemedText>
-                    </Pressable>
-                  </>
-                )}
-
+        onRequestClose={() => {
+          if (orderModalStage !== 'hidden') {
+            return;
+          }
+          setCheckoutModalVisible(false);
+          setActiveDropdown(null);
+        }}>
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => {
+              if (orderModalStage !== 'hidden') {
+                return;
+              }
+              setCheckoutModalVisible(false);
+              setActiveDropdown(null);
+            }}
+          />
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View style={[styles.modalCard, styles.checkoutModalCard]}>
+              <View style={styles.modalHeader}>
+                <ThemedText style={styles.modalTitle}>Checkout</ThemedText>
                 <Pressable
-                  style={({ pressed }) => [styles.rewardsCloseButton, pressed && styles.rewardsCloseButtonPressed]}
-                  onPress={handleOrderModalClose}>
-                  <ThemedText style={styles.rewardsCloseButtonText}>Close</ThemedText>
+                  style={styles.modalCloseButton}
+                  disabled={orderModalStage !== 'hidden'}
+                  onPress={() => {
+                    if (orderModalStage !== 'hidden') {
+                      return;
+                    }
+                    setCheckoutModalVisible(false);
+                    setActiveDropdown(null);
+                  }}>
+                  <X color={BrandColors.darkAccent} size={18} />
                 </Pressable>
               </View>
-            ) : null}
-          </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.checkoutBody}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag">
+                <View style={styles.checkoutItemsBlock}>
+                  <ThemedText style={styles.checkoutFieldLabel}>Ready for Checkout</ThemedText>
+                  {cartItems.length === 0 ? (
+                    <ThemedText style={styles.checkoutItemsEmpty}>No items ready for checkout.</ThemedText>
+                  ) : (
+                    <View style={styles.checkoutItemsList}>
+                      {cartItems.map((item) => (
+                        <View key={item.key} style={styles.checkoutItemRow}>
+                          <View style={styles.checkoutItemNameWrap}>
+                            <ThemedText numberOfLines={1} style={styles.checkoutItemName}>
+                              {item.name}
+                            </ThemedText>
+                            {item.specialInstructions && item.specialInstructions.trim().length > 0 ? (
+                              <ThemedText numberOfLines={2} style={styles.checkoutItemInstructions}>
+                                {item.specialInstructions.trim()}
+                              </ThemedText>
+                            ) : null}
+                          </View>
+                          <ThemedText style={styles.checkoutItemQuantity}>x{item.quantity}</ThemedText>
+                          <ThemedText style={styles.checkoutItemPrice}>
+                            {formatCurrency(item.unitPrice * item.quantity)}
+                          </ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+              <View style={styles.checkoutTotalRow}>
+                <ThemedText style={styles.checkoutTotalLabel}>Your order total:</ThemedText>
+                <ThemedText style={styles.checkoutTotalValue}>{formatCurrency(subtotal)}</ThemedText>
+              </View>
+
+              <View style={styles.twoColumnRow}>
+                <View style={[styles.fieldGroup, styles.twoColumnField]}>
+                  <ThemedText style={styles.checkoutFieldLabel}>First Name</ThemedText>
+                  <TextInput
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    autoCapitalize="words"
+                    editable={!isSubmittingOrder}
+                    placeholder="First name"
+                    placeholderTextColor={BrandColors.darkAccent}
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={[styles.fieldGroup, styles.twoColumnField]}>
+                  <ThemedText style={styles.checkoutFieldLabel}>Last Name</ThemedText>
+                  <TextInput
+                    value={lastName}
+                    onChangeText={setLastName}
+                    autoCapitalize="words"
+                    editable={!isSubmittingOrder}
+                    placeholder="Last name"
+                    placeholderTextColor={BrandColors.darkAccent}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <ThemedText style={styles.checkoutFieldLabel}>Phone Number</ThemedText>
+                <TextInput
+                  value={phoneNumber}
+                  onChangeText={(value) => setPhoneNumber(formatPhoneNumber(value))}
+                  keyboardType="phone-pad"
+                  maxLength={12}
+                  editable={!isSubmittingOrder}
+                  placeholder="555-123-4567"
+                  placeholderTextColor={BrandColors.darkAccent}
+                  style={styles.input}
+                />
+              </View>
+
+              {isLoadingLocations ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator color={BrandColors.primary} />
+                  <ThemedText style={styles.loadingText}>Loading locations...</ThemedText>
+                </View>
+              ) : (
+                <DropdownField
+                  label="Select your location"
+                  valueLabel={selectedLocationLabel}
+                  placeholder="Choose location"
+                  options={locationOptions}
+                  isOpen={activeDropdown === 'location'}
+                  disabled={locationOptions.length === 0 || isSubmittingOrder}
+                  onToggle={() => setActiveDropdown((current) => (current === 'location' ? null : 'location'))}
+                  onSelect={(value) => {
+                    setSelectedLocationId(value);
+                    setActiveDropdown(null);
+                  }}
+                />
+              )}
+
+              <DropdownField
+                label="Pickup"
+                valueLabel={pickupType}
+                placeholder="Choose pickup"
+                options={pickupOptions.map((option) => ({ value: option, label: option }))}
+                isOpen={activeDropdown === 'pickup'}
+                disabled={isSubmittingOrder}
+                onToggle={() => setActiveDropdown((current) => (current === 'pickup' ? null : 'pickup'))}
+                onSelect={(value) => {
+                  setPickupType(value as (typeof pickupOptions)[number]);
+                  setActiveDropdown(null);
+                }}
+              />
+
+              <View style={styles.checkoutFieldBlock}>
+                <ThemedText style={styles.checkoutFieldLabel}>Payment</ThemedText>
+                <View style={styles.paymentOptionsRow}>
+                  {paymentMethodOptions.map((option) => {
+                    const isSelected = paymentMethod === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        style={({ pressed }) => [
+                          styles.paymentOptionButton,
+                          isSelected && styles.paymentOptionButtonSelected,
+                          pressed && !isSubmittingOrder && styles.paymentOptionButtonPressed,
+                        ]}
+                        disabled={isSubmittingOrder}
+                        onPress={() => {
+                          setPaymentMethod(option.value);
+                          setOrderErrorMessage(null);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Select ${option.label} payment`}>
+                        <Image source={option.image} style={styles.paymentOptionImage} contentFit="contain" />
+                        {isSelected ? (
+                          <View style={styles.paymentSelectedBadge}>
+                            <Check size={12} color="#ffffff" />
+                          </View>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.orderButton,
+                  pressed && styles.modalActionPressed,
+                  (isSubmittingOrder || cartItems.length === 0) && styles.disabledButton,
+                ]}
+                disabled={isSubmittingOrder || cartItems.length === 0}
+                onPress={() => {
+                  setActiveDropdown(null);
+                  void handlePlaceOrder();
+                }}>
+                {isSubmittingOrder ? (
+                  <>
+                    <ActivityIndicator color={BrandColors.secondary} size="small" />
+                    <ThemedText style={styles.orderButtonText}>Placing Order...</ThemedText>
+                  </>
+                ) : (
+                  <ThemedText style={styles.orderButtonText}>Order</ThemedText>
+                )}
+              </Pressable>
+
+                {locationsErrorMessage ? <ThemedText style={styles.errorText}>{locationsErrorMessage}</ThemedText> : null}
+                {orderErrorMessage ? <ThemedText style={styles.errorText}>{orderErrorMessage}</ThemedText> : null}
+              </ScrollView>
+
+              {orderModalStage !== 'hidden' ? (
+                <View style={styles.checkoutStatusOverlay}>
+                  {orderModalStage === 'loading' ? (
+                    <View style={styles.orderModalStateWrap}>
+                      <ActivityIndicator color={BrandColors.primary} size="large" />
+                      <ThemedText style={styles.loadingText}>Processing order...</ThemedText>
+                    </View>
+                  ) : null}
+
+                  {orderModalStage === 'success' ? (
+                    <View style={styles.orderModalStateWrap}>
+                      <CheckCircle2 color={BrandColors.primary} size={88} strokeWidth={2.35} />
+                      <ThemedText style={styles.successText}>Order processed successfully</ThemedText>
+                      <ThemedText style={styles.successDetailText}>
+                        A copy of your receipt has been texted to you.
+                      </ThemedText>
+                      <ThemedText style={styles.successDetailText}>
+                        Redirecting to sign in to claim {rewardPointsEarned} points...
+                      </ThemedText>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          </TouchableWithoutFeedback>
         </View>
       </Modal>
     </ThemedView>
@@ -1125,46 +1150,505 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BrandColors.secondary,
   },
-  content: {
-    padding: 20,
-    gap: 14,
-    paddingBottom: 30,
-  },
-  backButton: {
+  header: {
+    paddingHorizontal: 18,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 6,
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: BrandColors.accent,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
     borderWidth: 1,
     borderColor: BrandColors.accent,
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
     backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backButtonPressed: {
-    opacity: 0.82,
+    opacity: 0.84,
   },
-  backButtonText: {
-    color: BrandColors.darkAccent,
-    fontSize: 13,
-    fontWeight: '600',
+  bannerLogo: {
+    width: 130,
+    height: 40,
+  },
+  cartBadge: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 999,
+    width: 38,
+    height: 38,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cartBadgePressed: {
+    opacity: 0.84,
+  },
+  cartCountBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: BrandColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cartCountText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 10,
+    lineHeight: 12,
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 28,
   },
   title: {
     color: BrandColors.darkAccent,
-    marginTop: 2,
+    marginBottom: 8,
   },
   subtitle: {
     color: BrandColors.text,
-    marginTop: -4,
+    marginBottom: 14,
   },
-  card: {
+  summaryCard: {
     borderWidth: 1,
     borderColor: BrandColors.accent,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: '#ffffff',
-    padding: 14,
+    padding: 12,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  summaryCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  summaryTitle: {
+    color: BrandColors.darkAccent,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  summaryValue: {
+    color: BrandColors.primary,
+    fontWeight: '700',
+    fontSize: 18,
+  },
+  viewCartButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: BrandColors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  viewCartButtonPressed: {
+    opacity: 0.86,
+  },
+  viewCartButtonText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  helperText: {
+    color: BrandColors.text,
+    marginBottom: 12,
+  },
+  errorText: {
+    color: '#9b2d2d',
+    marginBottom: 8,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  sectionList: {
+    gap: 16,
+  },
+  sectionBlock: {
+    gap: 10,
+  },
+  sectionTitle: {
+    color: BrandColors.darkAccent,
+  },
+  list: {
+    gap: 10,
+  },
+  itemCard: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    backgroundColor: '#ffffff',
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: 12,
+  },
+  itemImageWrap: {
+    position: 'relative',
+    width: 108,
+    height: 108,
+  },
+  itemImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+    backgroundColor: '#f2f2f2',
+  },
+  itemQuantityBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    minWidth: 26,
+    height: 18,
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    backgroundColor: '#0d8a66',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemQuantityBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
+  },
+  itemDetails: {
+    flex: 1,
+    gap: 4,
+  },
+  itemTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  itemName: {
+    color: BrandColors.darkAccent,
+    fontWeight: '700',
+    flex: 1,
+  },
+  itemPrice: {
+    color: BrandColors.primary,
+    fontWeight: '700',
+  },
+  itemDescription: {
+    color: BrandColors.text,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  itemToggleButton: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    width: 28,
+    height: 28,
+  },
+  itemToggleButtonPressed: {
+    opacity: 0.82,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.34)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 18,
+    backgroundColor: '#ffffff',
+    padding: 16,
+    maxHeight: '88%',
+    width: '100%',
+    marginTop: 16,
+  },
+  checkoutModalCard: {
+    maxHeight: '92%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 25,
+    color: BrandColors.darkAccent,
+    fontWeight: '700',
+  },
+  modalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f6efe3',
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+  },
+  cartEmptyState: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#fcf8f2',
+  },
+  cartEmptyText: {
+    color: BrandColors.text,
+    lineHeight: 20,
+  },
+  cartItemsList: {
+    maxHeight: 320,
+    flexGrow: 0,
+  },
+  cartItemsContent: {
+    gap: 10,
+    paddingBottom: 6,
+  },
+  cartItemRow: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 12,
+    padding: 10,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cartItemImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    backgroundColor: '#f2f2f2',
+  },
+  cartItemBody: {
+    flex: 1,
+    gap: 6,
+  },
+  cartItemHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  cartItemActionGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  cartItemName: {
+    flex: 1,
+    color: BrandColors.darkAccent,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  cartItemInstructionButton: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  cartItemInstructionButtonActive: {
+    backgroundColor: '#dcf5ea',
+  },
+  removeItemButton: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  specialInstructionsInput: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 13,
+    color: BrandColors.darkAccent,
+    backgroundColor: '#fffdf9',
+  },
+  specialInstructionsPreview: {
+    color: BrandColors.text,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  cartItemMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cartItemPrice: {
+    color: BrandColors.primary,
+    fontWeight: '700',
+  },
+  quantityGroup: {
+    borderWidth: 2,
+    borderColor: '#8ec3a6',
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  quantityButton: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quantityText: {
+    color: BrandColors.darkAccent,
+    fontWeight: '700',
+    minWidth: 12,
+    textAlign: 'center',
+  },
+  subtotalRow: {
+    marginTop: 12,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  subtotalLabel: {
+    color: BrandColors.darkAccent,
+    fontSize: 18,
+  },
+  subtotalValue: {
+    color: BrandColors.primary,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  keepShoppingButton: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: BrandColors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  keepShoppingText: {
+    color: BrandColors.primary,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  checkoutButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BrandColors.primary,
+  },
+  checkoutButtonText: {
+    color: BrandColors.secondary,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalActionPressed: {
+    opacity: 0.8,
+  },
+  disabledButton: {
+    opacity: 0.55,
+  },
+  checkoutBody: {
+    gap: 10,
+    paddingBottom: 6,
+  },
+  checkoutTotalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  checkoutTotalLabel: {
+    color: BrandColors.darkAccent,
+    fontSize: 17,
+  },
+  checkoutTotalValue: {
+    color: BrandColors.primary,
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  checkoutItemsBlock: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 7,
+  },
+  checkoutItemsEmpty: {
+    color: BrandColors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  checkoutItemsList: {
+    gap: 6,
+    maxHeight: 150,
+  },
+  checkoutItemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  checkoutItemNameWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  checkoutItemName: {
+    color: BrandColors.darkAccent,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  checkoutItemInstructions: {
+    color: BrandColors.text,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  checkoutItemQuantity: {
+    color: BrandColors.text,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  checkoutItemPrice: {
+    color: BrandColors.primary,
+    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  loadingText: {
+    color: BrandColors.text,
   },
   twoColumnRow: {
     flexDirection: 'row',
@@ -1176,11 +1660,6 @@ const styles = StyleSheet.create({
   twoColumnField: {
     flex: 1,
   },
-  fieldLabel: {
-    color: BrandColors.darkAccent,
-    fontSize: 14,
-    fontWeight: '700',
-  },
   input: {
     borderWidth: 1,
     borderColor: BrandColors.accent,
@@ -1190,110 +1669,59 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     color: BrandColors.darkAccent,
   },
-  fieldBlock: {
-    gap: 7,
+  checkoutFieldBlock: {
+    gap: 6,
+  },
+  checkoutFieldLabel: {
+    color: BrandColors.darkAccent,
+    fontWeight: '700',
   },
   dropdownTrigger: {
     borderWidth: 1,
     borderColor: BrandColors.accent,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    backgroundColor: '#fff',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   dropdownTriggerDisabled: {
     opacity: 0.6,
   },
   dropdownTriggerPressed: {
-    backgroundColor: '#f7f3ec',
+    opacity: 0.8,
   },
   dropdownValue: {
     color: BrandColors.darkAccent,
-    fontSize: 14,
-    fontWeight: '600',
-    flexShrink: 1,
+    flex: 1,
   },
   dropdownPlaceholder: {
-    color: '#8d7d70',
-    fontWeight: '500',
+    color: '#8a827a',
   },
   dropdownMenu: {
     borderWidth: 1,
     borderColor: BrandColors.accent,
     borderRadius: 10,
+    backgroundColor: '#fff',
     overflow: 'hidden',
-    backgroundColor: '#ffffff',
   },
   dropdownOption: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 10,
   },
   dropdownOptionPressed: {
-    backgroundColor: '#f4f1eb',
+    backgroundColor: '#ecfff6',
   },
   dropdownOptionText: {
-    color: BrandColors.text,
-    fontSize: 14,
+    color: BrandColors.darkAccent,
   },
   dropdownEmptyText: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 10,
-    color: '#8d7d70',
-    fontSize: 13,
-  },
-  viewMenuButton: {
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
-    borderRadius: 10,
-    backgroundColor: '#fffdf9',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  viewMenuButtonPressed: {
-    opacity: 0.84,
-  },
-  viewMenuButtonText: {
-    color: BrandColors.darkAccent,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  helperText: {
-    color: '#7c6e63',
-    fontSize: 13,
-  },
-  errorText: {
-    color: '#9e1a1a',
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
-    borderRadius: 10,
-    backgroundColor: '#fffdf9',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  totalLabel: {
-    color: BrandColors.darkAccent,
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  totalValue: {
-    color: BrandColors.primary,
-    fontWeight: '700',
-    fontSize: 18,
+    color: '#8a827a',
   },
   paymentOptionsRow: {
     flexDirection: 'row',
@@ -1305,7 +1733,7 @@ const styles = StyleSheet.create({
   paymentOptionButton: {
     width: '23%',
     position: 'relative',
-    height: 88,
+    height: 92,
     borderWidth: 1,
     borderColor: BrandColors.accent,
     borderRadius: 10,
@@ -1336,164 +1764,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   orderButton: {
-    marginTop: 2,
-    borderRadius: 10,
+    marginTop: 8,
+    borderRadius: 12,
     backgroundColor: BrandColors.primary,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  orderButtonPressed: {
-    opacity: 0.9,
-  },
-  orderButtonDisabled: {
-    opacity: 0.55,
+    flexDirection: 'row',
+    gap: 8,
   },
   orderButtonText: {
-    color: '#ffffff',
+    color: BrandColors.secondary,
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 17,
   },
-  menuModalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  menuModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  menuModalCard: {
-    width: '100%',
-    height: '88%',
-    minHeight: 360,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
-    backgroundColor: '#ffffff',
-    overflow: 'hidden',
-  },
-  menuModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: BrandColors.accent,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  menuModalTitle: {
-    color: BrandColors.darkAccent,
-  },
-  menuCloseButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
+  checkoutStatusOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.96)',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fffdf9',
-  },
-  menuLoadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-  },
-  menuModalBody: {
-    flex: 1,
-  },
-  menuModalBodyContent: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  menuEmptyText: {
-    color: BrandColors.text,
-    textAlign: 'center',
-    paddingVertical: 24,
-  },
-  sectionBlock: {
-    gap: 8,
-  },
-  sectionTitle: {
-    color: BrandColors.darkAccent,
-  },
-  sectionList: {
-    gap: 10,
-  },
-  itemCard: {
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
-    borderRadius: 12,
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    backgroundColor: '#ffffff',
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  itemImage: {
-    width: 92,
-    height: 92,
-    borderRadius: 10,
-    backgroundColor: '#f2f2f2',
-  },
-  itemDetails: {
-    flex: 1,
-    gap: 4,
-  },
-  itemTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  itemName: {
-    color: BrandColors.darkAccent,
-    fontWeight: '700',
-    flex: 1,
-  },
-  itemPrice: {
-    color: BrandColors.primary,
-    fontWeight: '700',
-  },
-  itemDescription: {
-    color: BrandColors.text,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  itemToggleButton: {
-    alignSelf: 'flex-end',
-    marginTop: 4,
-    padding: 2,
-  },
-  itemToggleButtonPressed: {
-    opacity: 0.72,
-  },
-  menuDoneButton: {
-    margin: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: BrandColors.primary,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 11,
-  },
-  menuDoneButtonPressed: {
-    opacity: 0.84,
-  },
-  menuDoneButtonText: {
-    color: BrandColors.primary,
-    fontWeight: '700',
-    fontSize: 15,
+    paddingHorizontal: 20,
   },
   orderModalOverlay: {
     flex: 1,
@@ -1516,15 +1811,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
   },
-  loadingText: {
-    color: BrandColors.darkAccent,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
   successText: {
     color: BrandColors.primary,
     fontSize: 22,
     fontWeight: '700',
+  },
+  successDetailText: {
+    color: BrandColors.text,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
   },
   rewardsHeaderText: {
     color: BrandColors.primary,
@@ -1564,58 +1860,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  claimGate: {
+    width: '100%',
+    gap: 6,
+    alignItems: 'center',
+  },
   signupCtaText: {
     color: BrandColors.text,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 19,
   },
-  claimForm: {
-    width: '100%',
-    gap: 8,
-  },
-  claimFieldLabel: {
-    color: BrandColors.darkAccent,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  claimInput: {
-    borderWidth: 1,
-    borderColor: BrandColors.accent,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#ffffff',
-    color: BrandColors.darkAccent,
-  },
-  claimInputDisabled: {
-    backgroundColor: '#f6f1ea',
-    color: '#7c6e63',
-  },
-  claimedSuccessText: {
-    color: '#197d3f',
-    fontSize: 13,
-    fontWeight: '700',
+  claimGateCopy: {
+    color: BrandColors.text,
+    fontSize: 12,
+    lineHeight: 17,
     textAlign: 'center',
   },
-  signupButton: {
+  claimActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
     marginTop: 2,
-    minWidth: 160,
+  },
+  signupButton: {
+    flex: 1,
     borderRadius: 10,
     backgroundColor: BrandColors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 11,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  secondaryClaimButton: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BrandColors.primary,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
     paddingHorizontal: 16,
   },
   signupButtonPressed: {
     opacity: 0.88,
   },
-  signupButtonDisabled: {
-    opacity: 0.7,
-  },
   signupButtonText: {
     color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  secondaryClaimButtonText: {
+    color: BrandColors.primary,
     fontWeight: '700',
     fontSize: 15,
   },
