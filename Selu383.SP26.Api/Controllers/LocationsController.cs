@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -37,14 +38,7 @@ public class LocationsController(DataContext dataContext) : ControllerBase
             return NotFound();
         }
 
-        return Ok(new LocationDto
-        {
-            Id = result.Id,
-            Name = result.Name,
-            Address = result.Address,
-            TableCount = result.TableCount,
-            ManagerId = result.ManagerId,
-        });
+        return Ok(ToDto(result));
     }
 
     [HttpPost]
@@ -106,6 +100,65 @@ public class LocationsController(DataContext dataContext) : ControllerBase
         return Ok(dto);
     }
 
+    [HttpPost("manage")]
+    [Authorize(Roles = RoleNames.Admin)]
+    public async Task<ActionResult<LocationDto>> CreateForManagement(LocationManageDto dto)
+    {
+        var normalizedAddress = (dto.Address ?? string.Empty).Trim();
+        if (normalizedAddress.Length == 0)
+        {
+            return BadRequest("Address is required.");
+        }
+
+        if (dto.TableCount < 1)
+        {
+            return BadRequest("Table count must be at least 1.");
+        }
+
+        var location = new Location
+        {
+            Name = await GenerateNextLocationNameAsync(),
+            Address = normalizedAddress,
+            TableCount = dto.TableCount
+        };
+
+        dataContext.Set<Location>().Add(location);
+        await dataContext.SaveChangesAsync();
+
+        var result = ToDto(location);
+        return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+    }
+
+    [HttpPatch("{id}/manage")]
+    [Authorize(Roles = RoleNames.Admin)]
+    public async Task<ActionResult<LocationDto>> UpdateForManagement(int id, LocationManageDto dto)
+    {
+        var normalizedAddress = (dto.Address ?? string.Empty).Trim();
+        if (normalizedAddress.Length == 0)
+        {
+            return BadRequest("Address is required.");
+        }
+
+        if (dto.TableCount < 1)
+        {
+            return BadRequest("Table count must be at least 1.");
+        }
+
+        var location = await dataContext.Set<Location>()
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (location == null)
+        {
+            return NotFound();
+        }
+
+        location.Address = normalizedAddress;
+        location.TableCount = dto.TableCount;
+        await dataContext.SaveChangesAsync();
+
+        return Ok(ToDto(location));
+    }
+
     [HttpDelete("{id}")]
     [Authorize]
     public ActionResult Delete(int id)
@@ -127,5 +180,33 @@ public class LocationsController(DataContext dataContext) : ControllerBase
         dataContext.SaveChanges();
 
         return Ok();
+    }
+
+    private static LocationDto ToDto(Location x)
+    {
+        return new LocationDto
+        {
+            Id = x.Id,
+            Name = x.Name,
+            Address = x.Address,
+            TableCount = x.TableCount,
+            ManagerId = x.ManagerId,
+        };
+    }
+
+    private async Task<string> GenerateNextLocationNameAsync()
+    {
+        var existingNames = await dataContext.Set<Location>()
+            .Select(x => x.Name)
+            .ToListAsync();
+
+        var index = 1;
+        while (existingNames.Any(name =>
+            string.Equals(name, $"Location {index}", StringComparison.OrdinalIgnoreCase)))
+        {
+            index++;
+        }
+
+        return $"Location {index}";
     }
 }

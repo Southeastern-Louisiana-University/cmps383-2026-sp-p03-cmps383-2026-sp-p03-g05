@@ -1,8 +1,8 @@
 import { Image } from 'expo-image';
 import { Redirect, Tabs, useRouter } from 'expo-router';
-import { CalendarCheck2, Check, ChevronDown, House, Minus, Plus, ShoppingCart, User, Utensils, X } from 'lucide-react-native';
+import { CalendarCheck2, Check, ChevronDown, House, Minus, NotebookPen, Plus, ShoppingCart, User, Utensils, X } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandedLoadingScreen } from '@/components/branded-loading-screen';
@@ -108,6 +108,38 @@ function DropdownField({
 }
 
 function AppBanner({ cartCount, onCartPress }: { cartCount: number; onCartPress: () => void }) {
+  const badgeScale = useRef(new Animated.Value(1)).current;
+  const previousCartCountRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const previous = previousCartCountRef.current;
+    previousCartCountRef.current = cartCount;
+
+    if (previous === null || previous === cartCount) {
+      return;
+    }
+
+    badgeScale.stopAnimation();
+    badgeScale.setValue(1);
+    Animated.sequence([
+      Animated.timing(badgeScale, {
+        toValue: 1.22,
+        duration: 70,
+        useNativeDriver: true,
+      }),
+      Animated.timing(badgeScale, {
+        toValue: 0.94,
+        duration: 50,
+        useNativeDriver: true,
+      }),
+      Animated.timing(badgeScale, {
+        toValue: 1,
+        duration: 50,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [badgeScale, cartCount]);
+
   return (
     <View style={styles.banner}>
       <Image source={require('@/assets/images/logo-round.png')} style={styles.bannerLogo} contentFit="contain" />
@@ -117,9 +149,9 @@ function AppBanner({ cartCount, onCartPress }: { cartCount: number; onCartPress:
         accessibilityRole="button"
         accessibilityLabel="Shopping cart">
         <ShoppingCart color={BrandColors.primary} size={20} />
-        <View style={styles.cartCountBadge}>
+        <Animated.View style={[styles.cartCountBadge, { transform: [{ scale: badgeScale }] }]}>
           <ThemedText style={styles.cartCountText}>{cartCount}</ThemedText>
-        </View>
+        </Animated.View>
       </Pressable>
     </View>
   );
@@ -128,11 +160,13 @@ function AppBanner({ cartCount, onCartPress }: { cartCount: number; onCartPress:
 export default function AppLayout() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading, refreshSession } = useAuth();
-  const { cartCount, cartItems, subtotal, clearCart, incrementItem, decrementItem, removeItem } = useCart();
+  const { cartCount, cartItems, subtotal, clearCart, incrementItem, decrementItem, removeItem, setItemSpecialInstructions } =
+    useCart();
   const insets = useSafeAreaInsets();
 
   const [isCartModalVisible, setCartModalVisible] = useState(false);
   const [isCheckoutModalVisible, setCheckoutModalVisible] = useState(false);
+  const [openInstructionEditorsByKey, setOpenInstructionEditorsByKey] = useState<Record<string, boolean>>({});
   const [locations, setLocations] = useState<LocationDto[]>([]);
   const [isLoadingLocations, setLoadingLocations] = useState(false);
   const [locationsErrorMessage, setLocationsErrorMessage] = useState<string | null>(null);
@@ -173,6 +207,25 @@ export default function AppLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    const validKeys = new Set(cartItems.map((item) => item.key));
+
+    setOpenInstructionEditorsByKey((previous) => {
+      let hasChanges = false;
+      const next: Record<string, boolean> = {};
+
+      Object.entries(previous).forEach(([itemKey, isOpen]) => {
+        if (validKeys.has(itemKey)) {
+          next[itemKey] = isOpen;
+        } else {
+          hasChanges = true;
+        }
+      });
+
+      return hasChanges ? next : previous;
+    });
+  }, [cartItems]);
+
   const closeAllModals = () => {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
@@ -189,6 +242,14 @@ export default function AppLayout() {
     setOrderSuccessVisible(false);
     setRewardPointsEarned(0);
     setRewardCounter(0);
+    setOpenInstructionEditorsByKey({});
+  };
+
+  const toggleInstructionEditor = (itemKey: string) => {
+    setOpenInstructionEditorsByKey((previous) => ({
+      ...previous,
+      [itemKey]: !previous[itemKey],
+    }));
   };
 
   const handleKeepShopping = () => {
@@ -305,6 +366,10 @@ export default function AppLayout() {
           name: item.name,
           quantity: item.quantity,
           unitPrice: Number(item.unitPrice.toFixed(2)),
+          specialInstructions:
+            item.specialInstructions && item.specialInstructions.trim().length > 0
+              ? item.specialInstructions.trim()
+              : undefined,
         })),
       });
 
@@ -435,10 +500,38 @@ export default function AppLayout() {
                     <View style={styles.cartItemBody}>
                       <View style={styles.cartItemHead}>
                         <ThemedText style={styles.cartItemName}>{item.name}</ThemedText>
-                        <Pressable style={styles.removeItemButton} onPress={() => removeItem(item.key)}>
-                          <X color={BrandColors.text} size={15} />
-                        </Pressable>
+                        <View style={styles.cartItemActionGroup}>
+                          <Pressable
+                            style={[
+                              styles.cartItemInstructionButton,
+                              item.specialInstructions && item.specialInstructions.trim().length > 0
+                                ? styles.cartItemInstructionButtonActive
+                                : null,
+                            ]}
+                            onPress={() => toggleInstructionEditor(item.key)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Add special instructions for ${item.name}`}>
+                            <NotebookPen color={BrandColors.primary} size={14} />
+                          </Pressable>
+                          <Pressable style={styles.removeItemButton} onPress={() => removeItem(item.key)}>
+                            <X color={BrandColors.text} size={15} />
+                          </Pressable>
+                        </View>
                       </View>
+                      {openInstructionEditorsByKey[item.key] ? (
+                        <TextInput
+                          style={styles.specialInstructionsInput}
+                          placeholder="Add special instructions"
+                          placeholderTextColor="#6f6f6f"
+                          value={item.specialInstructions ?? ''}
+                          onChangeText={(value) => setItemSpecialInstructions(item.key, value)}
+                          maxLength={300}
+                        />
+                      ) : item.specialInstructions && item.specialInstructions.trim().length > 0 ? (
+                        <ThemedText style={styles.specialInstructionsPreview}>
+                          Special Instructions: {item.specialInstructions}
+                        </ThemedText>
+                      ) : null}
                       <View style={styles.cartItemMeta}>
                         <ThemedText style={styles.cartItemPrice}>{formatCurrency(item.unitPrice * item.quantity)}</ThemedText>
                         <View style={styles.quantityGroup}>
@@ -513,6 +606,34 @@ export default function AppLayout() {
               </View>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.checkoutBody}>
+                <View style={styles.checkoutItemsBlock}>
+                  <ThemedText style={styles.checkoutFieldLabel}>Ready for Checkout</ThemedText>
+                  {cartItems.length === 0 ? (
+                    <ThemedText style={styles.checkoutItemsEmpty}>No items ready for checkout.</ThemedText>
+                  ) : (
+                    <View style={styles.checkoutItemsList}>
+                      {cartItems.map((item) => (
+                        <View key={item.key} style={styles.checkoutItemRow}>
+                          <View style={styles.checkoutItemNameWrap}>
+                            <ThemedText numberOfLines={1} style={styles.checkoutItemName}>
+                              {item.name}
+                            </ThemedText>
+                            {item.specialInstructions && item.specialInstructions.trim().length > 0 ? (
+                              <ThemedText numberOfLines={2} style={styles.checkoutItemInstructions}>
+                                {item.specialInstructions}
+                              </ThemedText>
+                            ) : null}
+                          </View>
+                          <ThemedText style={styles.checkoutItemQuantity}>x{item.quantity}</ThemedText>
+                          <ThemedText style={styles.checkoutItemPrice}>
+                            {formatCurrency(item.unitPrice * item.quantity)}
+                          </ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
                 <View style={styles.checkoutTotalRow}>
                   <ThemedText style={styles.checkoutTotalLabel}>Your order total:</ThemedText>
                   <ThemedText style={styles.checkoutTotalValue}>{formatCurrency(subtotal)}</ThemedText>
@@ -751,17 +872,47 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 6,
   },
+  cartItemActionGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
   cartItemName: {
     flex: 1,
     color: BrandColors.darkAccent,
     fontWeight: '700',
     lineHeight: 20,
   },
+  cartItemInstructionButton: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  cartItemInstructionButtonActive: {
+    backgroundColor: '#dcf5ea',
+  },
   removeItemButton: {
     width: 24,
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  specialInstructionsInput: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 13,
+    color: BrandColors.darkAccent,
+    backgroundColor: '#fffdf9',
+  },
+  specialInstructionsPreview: {
+    color: BrandColors.text,
+    fontSize: 12,
+    lineHeight: 16,
   },
   cartItemMeta: {
     flexDirection: 'row',
@@ -867,6 +1018,54 @@ const styles = StyleSheet.create({
     color: BrandColors.primary,
     fontSize: 22,
     fontWeight: '700',
+  },
+  checkoutItemsBlock: {
+    borderWidth: 1,
+    borderColor: BrandColors.accent,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 7,
+  },
+  checkoutItemsEmpty: {
+    color: BrandColors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  checkoutItemsList: {
+    gap: 6,
+    maxHeight: 150,
+  },
+  checkoutItemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  checkoutItemNameWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  checkoutItemName: {
+    color: BrandColors.darkAccent,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  checkoutItemInstructions: {
+    color: BrandColors.text,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  checkoutItemQuantity: {
+    color: BrandColors.text,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  checkoutItemPrice: {
+    color: BrandColors.primary,
+    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 18,
   },
   loadingRow: {
     flexDirection: 'row',

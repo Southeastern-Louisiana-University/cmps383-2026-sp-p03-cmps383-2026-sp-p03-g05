@@ -686,6 +686,7 @@ export default function ReserveScreen() {
             <View style={styles.successWrap}>
               <CheckCircle2 color={BrandColors.primary} size={84} strokeWidth={2.25} />
               <ThemedText style={styles.successText}>Payment processed successfully. Your reservation has been saved!</ThemedText>
+              <ThemedText style={styles.successDetailText}>A copy of your receipt has been texted to you.</ThemedText>
             </View>
           ) : null}
         </View>
@@ -1023,5 +1024,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 20,
+  },
+  successDetailText: {
+    color: BrandColors.text,
+    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

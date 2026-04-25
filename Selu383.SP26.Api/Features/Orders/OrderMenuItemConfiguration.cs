@@ -12,6 +12,9 @@ public class OrderMenuItemConfiguration : IEntityTypeConfiguration<OrderMenuItem
         builder.Property(x => x.Quantity)
             .HasDefaultValue(1);
 
+        builder.Property(x => x.SpecialInstructions)
+            .HasMaxLength(300);
+
         builder.HasOne(x => x.Order)
             .WithMany(x => x.OrderMenuItems)
             .HasForeignKey(x => x.OrderId)

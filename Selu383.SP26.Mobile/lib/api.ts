@@ -2,6 +2,14 @@ export type UserDto = {
   id: number;
   userName: string;
   pridePoints?: number;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  email?: string;
   roles: string[];
 };
 
@@ -55,6 +63,7 @@ export type OrderItemDto = {
   imageUrl?: string;
   quantity: number;
   unitPrice: number;
+  specialInstructions?: string;
 };
 
 export type CreateOrderDto = {

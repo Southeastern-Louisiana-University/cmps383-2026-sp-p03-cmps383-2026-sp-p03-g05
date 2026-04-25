@@ -10,10 +10,10 @@ import {
   LogOut,
   Menu,
   Minus,
+  NotebookPen,
   Plus,
-  Square,
-  SquareCheck,
   ShoppingCart,
+  Sun,
   X,
 } from "lucide-react";
 import "./index.css";
@@ -53,6 +53,7 @@ import EmployeeDashboard from "./EmployeeDashboard";
 import ReservationsModal, { type ReservationLoginPayload } from "./reservations";
 import MenuEditor from "./MenuEditor";
 import ReportsPage from "./ReportsPage";
+import RoundedSelect from "./components/RoundedSelect";
 
 const menuItemImages: Record<string, string> = {
   "Iced Latte": icedLateImg,
@@ -368,12 +369,14 @@ type CartSummaryItem = {
   image: string;
   unitPrice: number;
   quantity: number;
+  specialInstructions: string;
 };
 
 type GuestOrderReplayItem = {
   name: string;
   quantity: number;
   unitPrice: number;
+  specialInstructions?: string;
 };
 
 type GuestOrderReplayDraft = {
@@ -433,6 +436,7 @@ const calculateRewardPoints = (orderTotal: number) =>
   Math.max(0, Math.round(orderTotal * 10));
 const rewardsCounterDurationMs = 1200;
 const rewardsPopupHoldMs = 3000;
+const maxSpecialInstructionsLength = 300;
 
 const buildApiUrl = (path: string) =>
   `${apiBaseUrl.replace(/\/$/, "")}${path}`;
@@ -441,6 +445,14 @@ const customerPagePath = "/customerpage";
 const employeeDashboardPath = "/dashboard";
 const reportsPath = "/reports";
 const legacyReservationsPath = "/reservations";
+const pageToneSwatches = [
+  "#fffaf4",
+  "#f2ece5",
+  "#e4ddd4",
+  "#d6cec4",
+  "#c8c0b5",
+] as const;
+const maxPageToneIndex = pageToneSwatches.length - 1;
 
 const normalizePath = (path: string) => {
   const normalized = path.trim().toLowerCase();
@@ -451,19 +463,45 @@ const normalizePath = (path: string) => {
   return normalized.replace(/\/+$/, "");
 };
 
+const playAddToCartBounce = (button: HTMLButtonElement) => {
+  if (typeof button.animate !== "function") {
+    return;
+  }
+
+  button.animate(
+    [
+      { transform: "scale(1)" },
+      { transform: "scale(0.86)" },
+      { transform: "scale(1.08)" },
+      { transform: "scale(1)" },
+    ],
+    {
+      duration: 170,
+      easing: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+    },
+  );
+};
+
 function MenuCard({
   item,
-  isSelected,
+  quantity,
   onToggle,
 }: {
   item: MenuItem;
-  isSelected: boolean;
+  quantity: number;
   onToggle: (itemName: string) => void;
 }) {
+  const isSelected = quantity > 0;
+
   return (
     <article className="menu-card">
       <div className="menu-card-body">
-        <img src={item.image} alt={item.name} className="menu-card-image" />
+        <div className="menu-card-image-wrap">
+          <img src={item.image} alt={item.name} className="menu-card-image" />
+          {quantity > 0 ? (
+            <span className="item-quantity-badge">x{quantity}</span>
+          ) : null}
+        </div>
         <div className="menu-card-content">
           <div className="menu-card-top">
             <h3>{item.name}</h3>
@@ -473,13 +511,14 @@ function MenuCard({
           <div className="menu-card-actions">
             <button
               type="button"
-              className="menu-item-toggle"
-              onClick={() => onToggle(item.name)}
-              aria-label={`${isSelected ? "Remove" : "Add"} ${item.name} ${
-                isSelected ? "from" : "to"
-              } cart`}
+              className={`menu-item-toggle ${isSelected ? "in-cart" : ""}`}
+              onClick={(event) => {
+                playAddToCartBounce(event.currentTarget);
+                onToggle(item.name);
+              }}
+              aria-label={`${isSelected ? "Add another" : "Add"} ${item.name} to cart`}
             >
-              {isSelected ? <SquareCheck size={20} /> : <Square size={20} />}
+              <Plus size={20} />
             </button>
           </div>
         </div>
@@ -493,8 +532,14 @@ function App() {
   const [cartItemsByName, setCartItemsByName] = useState<Record<string, number>>(
     {},
   );
+  const [cartSpecialInstructionsByName, setCartSpecialInstructionsByName] =
+    useState<Record<string, string>>({});
+  const [openInstructionEditorsByName, setOpenInstructionEditorsByName] =
+    useState<Record<string, boolean>>({});
   const [isAuthPopupOpen, setIsAuthPopupOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isThemeToneMenuOpen, setIsThemeToneMenuOpen] = useState(false);
+  const [pageToneIndex, setPageToneIndex] = useState(0);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isReservationsModalOpen, setIsReservationsModalOpen] = useState(false);
   const [loginUserName, setLoginUserName] = useState("");
@@ -534,6 +579,9 @@ function App() {
   const [pickupType, setPickupType] =
     useState<(typeof pickupOptions)[number]>("In Store");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [guestCheckoutFirstName, setGuestCheckoutFirstName] = useState("");
+  const [guestCheckoutLastName, setGuestCheckoutLastName] = useState("");
+  const [guestCheckoutPhoneNumber, setGuestCheckoutPhoneNumber] = useState("");
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderErrorMessage, setOrderErrorMessage] = useState<string | null>(null);
   const [orderSuccessMessageVisible, setOrderSuccessMessageVisible] =
@@ -558,16 +606,19 @@ function App() {
   const swipeDeltaX = useRef(0);
   const closeCheckoutTimer = useRef<number | null>(null);
   const rewardsCounterTimer = useRef<number | null>(null);
+  const previousCartCountRef = useRef<number | null>(null);
   const authControlRef = useRef<HTMLDivElement | null>(null);
   const navAreaRef = useRef<HTMLDivElement | null>(null);
+  const [isCartBadgePulsing, setIsCartBadgePulsing] = useState(false);
 
   const isMenuEditorPage = currentPath === menuEditorPath;
   const isCustomerPage = currentPath === customerPagePath;
   const isEmployeeDashboardPage = currentPath === employeeDashboardPath;
   const isReportsPage = currentPath === reportsPath;
+  const isAdmin = userRoles.some((role) => role.toLowerCase() === "admin");
   const isEmployeeOrAdmin =
     userRoles.some((role) => role.toLowerCase() === "employee") ||
-    userRoles.some((role) => role.toLowerCase() === "admin");
+    isAdmin;
 
   const displayMenuItems = [
     ...drinkMenuItems,
@@ -618,6 +669,7 @@ function App() {
         image: catalogItem.image,
         unitPrice: catalogItem.unitPrice,
         quantity,
+        specialInstructions: cartSpecialInstructionsByName[name] ?? "",
       };
     })
     .filter((item): item is CartSummaryItem => item !== null);
@@ -630,6 +682,80 @@ function App() {
     (sum, item) => sum + item.unitPrice * item.quantity,
     0,
   );
+  const guestCheckoutPhoneDigits = guestCheckoutPhoneNumber.replace(/\D/g, "");
+  const isGuestCheckoutProfileComplete =
+    guestCheckoutFirstName.trim().length > 0 &&
+    guestCheckoutLastName.trim().length > 0 &&
+    guestCheckoutPhoneDigits.length === 10;
+
+  const checkoutLocationOptions = isLocationsLoading
+    ? [{ value: "", label: "Loading locations...", disabled: true }]
+    : locations.length === 0
+      ? [{ value: "", label: "No locations available", disabled: true }]
+      : [
+          { value: "", label: "Choose location" },
+          ...locations.map((location) => ({
+            value: String(location.id),
+            label: location.address,
+          })),
+        ];
+
+  const pickupTypeOptions = pickupOptions.map((option) => ({
+    value: option,
+    label: option,
+  }));
+
+  useEffect(() => {
+    const previousCount = previousCartCountRef.current;
+    previousCartCountRef.current = cartCount;
+
+    if (previousCount === null || previousCount === cartCount) {
+      return;
+    }
+
+    setIsCartBadgePulsing(true);
+    const pulseTimer = window.setTimeout(() => {
+      setIsCartBadgePulsing(false);
+    }, 180);
+
+    return () => {
+      window.clearTimeout(pulseTimer);
+    };
+  }, [cartCount]);
+
+  useEffect(() => {
+    const validItemNames = new Set(Object.keys(cartItemsByName));
+
+    setCartSpecialInstructionsByName((previous) => {
+      let hasChanges = false;
+      const next: Record<string, string> = {};
+
+      Object.entries(previous).forEach(([itemName, specialInstructions]) => {
+        if (validItemNames.has(itemName)) {
+          next[itemName] = specialInstructions;
+        } else {
+          hasChanges = true;
+        }
+      });
+
+      return hasChanges ? next : previous;
+    });
+
+    setOpenInstructionEditorsByName((previous) => {
+      let hasChanges = false;
+      const next: Record<string, boolean> = {};
+
+      Object.entries(previous).forEach(([itemName, isOpen]) => {
+        if (validItemNames.has(itemName)) {
+          next[itemName] = isOpen;
+        } else {
+          hasChanges = true;
+        }
+      });
+
+      return hasChanges ? next : previous;
+    });
+  }, [cartItemsByName]);
 
   const carouselMenuItems = displayMenuItems.length > 0 ? displayMenuItems : drinks;
   const currentCarouselItem = carouselMenuItems[carouselIndex];
@@ -691,6 +817,7 @@ function App() {
   const toggleAuthPopup = () => {
     setLoginErrorMessage(null);
     setIsUserMenuOpen(false);
+    setIsThemeToneMenuOpen(false);
     setIsAuthPopupOpen((previous) => !previous);
   };
 
@@ -712,6 +839,7 @@ function App() {
   const openSignUpModal = () => {
     setIsAuthPopupOpen(false);
     setIsUserMenuOpen(false);
+    setIsThemeToneMenuOpen(false);
     setLoginErrorMessage(null);
     setSignUpErrorMessage(null);
     setActivePolicyModal(null);
@@ -761,6 +889,7 @@ function App() {
 
     if (loggedInUserName) {
       setIsAuthPopupOpen(false);
+      setIsThemeToneMenuOpen(false);
       setIsUserMenuOpen((previous) => !previous);
       return;
     }
@@ -770,6 +899,7 @@ function App() {
 
   const handleAccountClick = () => {
     setIsUserMenuOpen(false);
+    setIsThemeToneMenuOpen(false);
     setIsReservationsModalOpen(false);
 
     if (isEmployeeOrAdmin) {
@@ -780,15 +910,28 @@ function App() {
     navigateToPath(customerPagePath);
   };
 
+  const handleThemeToneMenuClick = () => {
+    setIsThemeToneMenuOpen((previous) => !previous);
+  };
+
+  const handlePageToneIndexChange = (nextValue: number) => {
+    const normalized = Number.isFinite(nextValue)
+      ? Math.max(0, Math.min(maxPageToneIndex, Math.round(nextValue)))
+      : 0;
+    setPageToneIndex(normalized);
+  };
+
   const toggleMobileNav = () => {
     setIsAuthPopupOpen(false);
     setIsUserMenuOpen(false);
+    setIsThemeToneMenuOpen(false);
     setIsMobileNavOpen((previous) => !previous);
   };
 
   const openReservationsModal = () => {
     setIsAuthPopupOpen(false);
     setIsUserMenuOpen(false);
+    setIsThemeToneMenuOpen(false);
     setIsMobileNavOpen(false);
     setIsReservationsModalOpen(true);
   };
@@ -796,6 +939,7 @@ function App() {
   const handleLogOut = async () => {
     setIsUserMenuOpen(false);
     setIsAuthPopupOpen(false);
+    setIsThemeToneMenuOpen(false);
     setLoginErrorMessage(null);
 
     try {
@@ -955,6 +1099,7 @@ function App() {
 
       setIsAuthPopupOpen(false);
       setIsUserMenuOpen(false);
+      setIsThemeToneMenuOpen(false);
     };
 
     document.addEventListener("pointerdown", handleOutsidePointerDown);
@@ -963,6 +1108,14 @@ function App() {
       document.removeEventListener("pointerdown", handleOutsidePointerDown);
     };
   }, [isAuthPopupOpen, isUserMenuOpen]);
+
+  useEffect(() => {
+    if (isUserMenuOpen) {
+      return;
+    }
+
+    setIsThemeToneMenuOpen(false);
+  }, [isUserMenuOpen]);
 
   useEffect(() => {
     if (!isMobileNavOpen) {
@@ -1110,22 +1263,14 @@ function App() {
     setCarouselIndex(0);
   }, [carouselIndex, carouselMenuItems.length]);
 
-  const isInCart = (itemName: string) => (cartItemsByName[itemName] ?? 0) > 0;
+  const getCartQuantity = (itemName: string) => cartItemsByName[itemName] ?? 0;
+  const isInCart = (itemName: string) => getCartQuantity(itemName) > 0;
 
   const toggleCartItem = (itemName: string) => {
-    setCartItemsByName((previous) => {
-      const currentQuantity = previous[itemName] ?? 0;
-
-      if (currentQuantity > 0) {
-        const { [itemName]: _, ...rest } = previous;
-        return rest;
-      }
-
-      return {
-        ...previous,
-        [itemName]: 1,
-      };
-    });
+    setCartItemsByName((previous) => ({
+      ...previous,
+      [itemName]: (previous[itemName] ?? 0) + 1,
+    }));
   };
 
   const incrementCartItem = (itemName: string) => {
@@ -1136,6 +1281,8 @@ function App() {
   };
 
   const decrementCartItem = (itemName: string) => {
+    const shouldRemoveItem = getCartQuantity(itemName) <= 1;
+
     setCartItemsByName((previous) => {
       const currentQuantity = previous[itemName] ?? 0;
 
@@ -1149,6 +1296,26 @@ function App() {
         [itemName]: currentQuantity - 1,
       };
     });
+
+    if (shouldRemoveItem) {
+      setCartSpecialInstructionsByName((previous) => {
+        if (!(itemName in previous)) {
+          return previous;
+        }
+
+        const { [itemName]: _, ...rest } = previous;
+        return rest;
+      });
+
+      setOpenInstructionEditorsByName((previous) => {
+        if (!(itemName in previous)) {
+          return previous;
+        }
+
+        const { [itemName]: _, ...rest } = previous;
+        return rest;
+      });
+    }
   };
 
   const removeCartItem = (itemName: string) => {
@@ -1160,10 +1327,49 @@ function App() {
       const { [itemName]: _, ...rest } = previous;
       return rest;
     });
+
+    setCartSpecialInstructionsByName((previous) => {
+      if (!(itemName in previous)) {
+        return previous;
+      }
+
+      const { [itemName]: _, ...rest } = previous;
+      return rest;
+    });
+
+    setOpenInstructionEditorsByName((previous) => {
+      if (!(itemName in previous)) {
+        return previous;
+      }
+
+      const { [itemName]: _, ...rest } = previous;
+      return rest;
+    });
   };
 
   const clearCart = () => {
     setCartItemsByName({});
+    setCartSpecialInstructionsByName({});
+    setOpenInstructionEditorsByName({});
+  };
+
+  const setCartItemSpecialInstructions = (
+    itemName: string,
+    specialInstructions: string,
+  ) => {
+    const normalizedValue = specialInstructions.slice(0, maxSpecialInstructionsLength);
+
+    setCartSpecialInstructionsByName((previous) => ({
+      ...previous,
+      [itemName]: normalizedValue,
+    }));
+  };
+
+  const toggleSpecialInstructionsEditor = (itemName: string) => {
+    setOpenInstructionEditorsByName((previous) => ({
+      ...previous,
+      [itemName]: !previous[itemName],
+    }));
   };
 
   const closeCartAndCheckout = () => {
@@ -1185,6 +1391,9 @@ function App() {
     setRewardCounter(0);
     setPendingGuestRewardPoints(0);
     setPendingGuestOrderDraft(null);
+    setGuestCheckoutFirstName("");
+    setGuestCheckoutLastName("");
+    setGuestCheckoutPhoneNumber("");
   };
 
   const handleKeepShopping = () => {
@@ -1234,6 +1443,9 @@ function App() {
     setRewardCounter(0);
     setPendingGuestRewardPoints(0);
     setPendingGuestOrderDraft(null);
+    setGuestCheckoutFirstName("");
+    setGuestCheckoutLastName("");
+    setGuestCheckoutPhoneNumber("");
     setIsCartModalOpen(false);
     setIsCheckoutModalOpen(true);
     void fetchLocations();
@@ -1360,6 +1572,23 @@ function App() {
     if (isSubmittingOrder || cartSummaryItems.length === 0) {
       return;
     }
+    const isGuestCheckout = !loggedInUserName;
+    const trimmedGuestFirstName = guestCheckoutFirstName.trim();
+    const trimmedGuestLastName = guestCheckoutLastName.trim();
+    const trimmedGuestPhone = guestCheckoutPhoneNumber.trim();
+    const guestPhoneDigits = trimmedGuestPhone.replace(/\D/g, "");
+
+    if (isGuestCheckout) {
+      if (!trimmedGuestFirstName || !trimmedGuestLastName) {
+        setOrderErrorMessage("First name and last name are required for guest checkout.");
+        return;
+      }
+
+      if (guestPhoneDigits.length !== 10) {
+        setOrderErrorMessage("Enter a valid 10-digit phone number.");
+        return;
+      }
+    }
 
     if (selectedLocationId === "") {
       setOrderErrorMessage("Please select a location.");
@@ -1377,7 +1606,6 @@ function App() {
     setPendingGuestOrderDraft(null);
 
     try {
-      const isGuestCheckout = !loggedInUserName;
       const selectedPaymentOption = paymentMethodOptions.find(
         (option) => option.value === paymentMethod,
       );
@@ -1390,8 +1618,20 @@ function App() {
           name: item.name,
           quantity: item.quantity,
           unitPrice: Number(item.unitPrice.toFixed(2)),
+          specialInstructions:
+            item.specialInstructions.trim().length > 0
+              ? item.specialInstructions.trim()
+              : undefined,
         })),
       };
+      const createOrderPayload = isGuestCheckout
+        ? {
+            ...orderPayload,
+            firstName: trimmedGuestFirstName,
+            lastName: trimmedGuestLastName,
+            phoneNumber: trimmedGuestPhone,
+          }
+        : orderPayload;
 
       let requiresAuthReplay = false;
 
@@ -1401,7 +1641,7 @@ function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(orderPayload),
+        body: JSON.stringify(createOrderPayload),
       });
 
       if (!response.ok) {
@@ -1430,13 +1670,8 @@ function App() {
 
       const pointsToAdd = calculateRewardPoints(cartSubtotal);
       if (isGuestCheckout) {
-        if (requiresAuthReplay) {
-          setPendingGuestRewardPoints(pointsToAdd);
-          setPendingGuestOrderDraft(orderPayload);
-        } else {
-          setPendingGuestRewardPoints(0);
-          setPendingGuestOrderDraft(null);
-        }
+        setPendingGuestRewardPoints(pointsToAdd);
+        setPendingGuestOrderDraft(requiresAuthReplay ? orderPayload : null);
       } else {
         await applyRewardsFromOrder(pointsToAdd);
       }
@@ -1692,7 +1927,7 @@ function App() {
       : 100;
 
   return (
-    <div className="page">
+    <div className={`page page-tone-${pageToneIndex}`}>
       <header className="navbar">
         <div className="brand">
           <img src={logo} alt="Caffeinated Lions logo" className="brand-logo" />
@@ -1808,6 +2043,52 @@ function App() {
                   </button>
                   <button
                     type="button"
+                    className={`user-action-item ${isThemeToneMenuOpen ? "active" : ""}`}
+                    onClick={handleThemeToneMenuClick}
+                    aria-expanded={isThemeToneMenuOpen}
+                    aria-label="Open background shade controls"
+                  >
+                    <Sun size={16} />
+                    <span>Shade</span>
+                  </button>
+                  {isThemeToneMenuOpen ? (
+                    <div className="tone-slider-panel">
+                      <div className="tone-slider-head">
+                        <span>Background Shade</span>
+                        <strong>{pageToneIndex + 1}/5</strong>
+                      </div>
+                      <input
+                        type="range"
+                        className="tone-slider"
+                        min={0}
+                        max={maxPageToneIndex}
+                        step={1}
+                        value={pageToneIndex}
+                        onChange={(event) => {
+                          handlePageToneIndexChange(
+                            Number.parseInt(event.target.value, 10),
+                          );
+                        }}
+                        aria-label="Adjust page background shade"
+                      />
+                      <div className="tone-step-grid">
+                        {pageToneSwatches.map((swatch, index) => (
+                          <button
+                            key={swatch}
+                            type="button"
+                            className={`tone-step-swatch ${
+                              pageToneIndex === index ? "selected" : ""
+                            }`}
+                            style={{ backgroundColor: swatch }}
+                            onClick={() => handlePageToneIndexChange(index)}
+                            aria-label={`Set shade option ${index + 1}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
                     className="user-action-item"
                     onClick={() => {
                       void handleLogOut();
@@ -1880,7 +2161,11 @@ function App() {
               onClick={() => setIsCartModalOpen(true)}
             >
               <ShoppingCart size={24} />
-              <span className="cart-count-badge">{cartCount}</span>
+              <span
+                className={`cart-count-badge ${isCartBadgePulsing ? "pulse" : ""}`}
+              >
+                {cartCount}
+              </span>
             </button>
           </div>
         </div>
@@ -1891,7 +2176,7 @@ function App() {
           userName={loggedInUserName ?? "Guest"}
           pridePoints={pridePoints}
           featuredItems={featuredMenuItems}
-          isInCart={isInCart}
+          getCartQuantity={getCartQuantity}
           onToggleCartItem={toggleCartItem}
           onOrderAgain={handleOrderAgainFromCustomerPage}
           buildApiUrl={buildApiUrl}
@@ -1917,7 +2202,7 @@ function App() {
         />
       ) : null}
 
-      {isReportsPage && isEmployeeOrAdmin ? (
+      {isReportsPage && isAdmin ? (
         <ReportsPage onBack={() => navigateToPath(employeeDashboardPath)} />
       ) : null}
 
@@ -1927,7 +2212,7 @@ function App() {
         isCustomerPage ||
         (isEmployeeDashboardPage && isEmployeeOrAdmin) ||
         (isMenuEditorPage && isEmployeeOrAdmin) ||
-        (isReportsPage && isEmployeeOrAdmin)
+        (isReportsPage && isAdmin)
           ? "none"
           : undefined,
         }}
@@ -2028,36 +2313,43 @@ function App() {
           </div>
 
           <div className="featured-grid">
-            {featuredMenuItems.map((drink) => (
-              <div className="featured-card" key={drink.name}>
-                <div className="featured-card-main">
-                  <img src={drink.image} alt={drink.name} className="featured-image" />
-                  <div className="featured-content">
-                    <div className="featured-top">
-                      <h3>{drink.name}</h3>
-                      <span>{drink.price}</span>
+            {featuredMenuItems.map((drink) => {
+              const quantity = getCartQuantity(drink.name);
+              const isSelected = quantity > 0;
+
+              return (
+                <div className="featured-card" key={drink.name}>
+                  <div className="featured-card-main">
+                    <div className="featured-image-wrap">
+                      <img src={drink.image} alt={drink.name} className="featured-image" />
+                      {quantity > 0 ? (
+                        <span className="item-quantity-badge">x{quantity}</span>
+                      ) : null}
                     </div>
-                    <p>{drink.description}</p>
+                    <div className="featured-content">
+                      <div className="featured-top">
+                        <h3>{drink.name}</h3>
+                        <span>{drink.price}</span>
+                      </div>
+                      <p>{drink.description}</p>
+                    </div>
+                  </div>
+                  <div className="featured-card-actions">
+                    <button
+                      type="button"
+                      className={`menu-item-toggle ${isSelected ? "in-cart" : ""}`}
+                      onClick={(event) => {
+                        playAddToCartBounce(event.currentTarget);
+                        toggleCartItem(drink.name);
+                      }}
+                      aria-label={`${isSelected ? "Add another" : "Add"} ${drink.name} to cart`}
+                    >
+                      <Plus size={20} />
+                    </button>
                   </div>
                 </div>
-                <div className="featured-card-actions">
-                  <button
-                    type="button"
-                    className="menu-item-toggle"
-                    onClick={() => toggleCartItem(drink.name)}
-                    aria-label={`${isInCart(drink.name) ? "Remove" : "Add"} ${
-                      drink.name
-                    } ${isInCart(drink.name) ? "from" : "to"} cart`}
-                  >
-                    {isInCart(drink.name) ? (
-                      <SquareCheck size={20} />
-                    ) : (
-                      <Square size={20} />
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -2072,7 +2364,7 @@ function App() {
                 <MenuCard
                   key={item.name}
                   item={item}
-                  isSelected={isInCart(item.name)}
+                  quantity={getCartQuantity(item.name)}
                   onToggle={toggleCartItem}
                 />
               ))}
@@ -2091,7 +2383,7 @@ function App() {
                 <MenuCard
                   key={item.name}
                   item={item}
-                  isSelected={isInCart(item.name)}
+                  quantity={getCartQuantity(item.name)}
                   onToggle={toggleCartItem}
                 />
               ))}
@@ -2110,7 +2402,7 @@ function App() {
                 <MenuCard
                   key={item.name}
                   item={item}
-                  isSelected={isInCart(item.name)}
+                  quantity={getCartQuantity(item.name)}
                   onToggle={toggleCartItem}
                 />
               ))}
@@ -2129,7 +2421,7 @@ function App() {
                 <MenuCard
                   key={item.name}
                   item={item}
-                  isSelected={isInCart(item.name)}
+                  quantity={getCartQuantity(item.name)}
                   onToggle={toggleCartItem}
                 />
               ))}
@@ -2409,53 +2701,90 @@ function App() {
               </p>
             ) : (
               <div className="cart-summary-list">
-                {cartSummaryItems.map((item) => (
-                  <article className="cart-summary-item" key={item.name}>
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      className="cart-summary-image"
-                    />
-                    <div className="cart-summary-body">
-                      <div className="cart-summary-head">
-                        <h3>{item.name}</h3>
-                        <button
-                          type="button"
-                          className="cart-remove-item-btn"
-                          aria-label={`Remove ${item.name} from cart`}
-                          onClick={() => removeCartItem(item.name)}
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                      <p>{item.description}</p>
-                      <div className="cart-summary-meta">
-                        <strong>
-                          ${(item.unitPrice * item.quantity).toFixed(2)}
-                        </strong>
-                        <div className="cart-quantity-controls">
-                          <button
-                            type="button"
-                            className="quantity-btn"
-                            aria-label={`Decrease quantity for ${item.name}`}
-                            onClick={() => decrementCartItem(item.name)}
-                          >
-                            <Minus size={16} />
-                          </button>
-                          <span>{item.quantity}</span>
-                          <button
-                            type="button"
-                            className="quantity-btn"
-                            aria-label={`Increase quantity for ${item.name}`}
-                            onClick={() => incrementCartItem(item.name)}
-                          >
-                            <Plus size={16} />
-                          </button>
+                {cartSummaryItems.map((item) => {
+                  const isInstructionEditorOpen =
+                    openInstructionEditorsByName[item.name] ?? false;
+                  const hasSpecialInstructions = item.specialInstructions.trim().length > 0;
+
+                  return (
+                    <article className="cart-summary-item" key={item.name}>
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className="cart-summary-image"
+                      />
+                      <div className="cart-summary-body">
+                        <div className="cart-summary-head">
+                          <h3>{item.name}</h3>
+                          <div className="cart-summary-actions">
+                            <button
+                              type="button"
+                              className={`cart-item-instructions-btn ${
+                                hasSpecialInstructions ? "active" : ""
+                              }`}
+                              aria-label={`Add special instructions for ${item.name}`}
+                              onClick={() => toggleSpecialInstructionsEditor(item.name)}
+                            >
+                              <NotebookPen size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              className="cart-remove-item-btn"
+                              aria-label={`Remove ${item.name} from cart`}
+                              onClick={() => removeCartItem(item.name)}
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        <p>{item.description}</p>
+                        {isInstructionEditorOpen ? (
+                          <input
+                            type="text"
+                            className="cart-item-instructions-input"
+                            placeholder="Add special instructions"
+                            value={item.specialInstructions}
+                            maxLength={maxSpecialInstructionsLength}
+                            onChange={(event) =>
+                              setCartItemSpecialInstructions(
+                                item.name,
+                                event.target.value,
+                              )
+                            }
+                          />
+                        ) : hasSpecialInstructions ? (
+                          <p className="cart-item-instructions-preview">
+                            Special Instructions: {item.specialInstructions}
+                          </p>
+                        ) : null}
+                        <div className="cart-summary-meta">
+                          <strong>
+                            ${(item.unitPrice * item.quantity).toFixed(2)}
+                          </strong>
+                          <div className="cart-quantity-controls">
+                            <button
+                              type="button"
+                              className="quantity-btn"
+                              aria-label={`Decrease quantity for ${item.name}`}
+                              onClick={() => decrementCartItem(item.name)}
+                            >
+                              <Minus size={16} />
+                            </button>
+                            <span>{item.quantity}</span>
+                            <button
+                              type="button"
+                              className="quantity-btn"
+                              aria-label={`Increase quantity for ${item.name}`}
+                              onClick={() => incrementCartItem(item.name)}
+                            >
+                              <Plus size={16} />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )}
 
@@ -2517,6 +2846,11 @@ function App() {
                   className="checkout-success-icon"
                 />
                 <h3>Order placed successfully</h3>
+                {!loggedInUserName ? (
+                  <p className="checkout-success-copy">
+                    A copy of your receipt has been texted to you.
+                  </p>
+                ) : null}
                 <p className="checkout-success-copy">
                   Congrats! You earned reward points.
                 </p>
@@ -2559,39 +2893,100 @@ function App() {
               </div>
             ) : (
               <>
+                <div className="checkout-items">
+                  <span className="checkout-items-label">Ready for Checkout</span>
+                  {cartSummaryItems.length === 0 ? (
+                    <p className="checkout-items-empty">No items ready for checkout.</p>
+                  ) : (
+                    <ul className="checkout-items-list">
+                      {cartSummaryItems.map((item) => (
+                        <li className="checkout-items-row" key={item.name}>
+                          <div className="checkout-items-name-wrap">
+                            <span className="checkout-items-name">{item.name}</span>
+                            {item.specialInstructions.trim().length > 0 ? (
+                              <span className="checkout-items-note">
+                                {item.specialInstructions}
+                              </span>
+                            ) : null}
+                          </div>
+                          <span className="checkout-items-quantity">x{item.quantity}</span>
+                          <strong>${(item.unitPrice * item.quantity).toFixed(2)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
                 <div className="checkout-total-row">
                   <span>Your order total:</span>
                   <strong>${cartSubtotal.toFixed(2)}</strong>
                 </div>
 
+                {!loggedInUserName ? (
+                  <>
+                    <label className="checkout-field">
+                      <span>First Name:</span>
+                      <input
+                        type="text"
+                        value={guestCheckoutFirstName}
+                        onChange={(event) => {
+                          setGuestCheckoutFirstName(event.target.value);
+                          setOrderErrorMessage(null);
+                        }}
+                        disabled={isSubmittingOrder}
+                        placeholder="First name"
+                        autoComplete="given-name"
+                      />
+                    </label>
+
+                    <label className="checkout-field">
+                      <span>Last Name:</span>
+                      <input
+                        type="text"
+                        value={guestCheckoutLastName}
+                        onChange={(event) => {
+                          setGuestCheckoutLastName(event.target.value);
+                          setOrderErrorMessage(null);
+                        }}
+                        disabled={isSubmittingOrder}
+                        placeholder="Last name"
+                        autoComplete="family-name"
+                      />
+                    </label>
+
+                    <label className="checkout-field">
+                      <span>Phone Number:</span>
+                      <input
+                        type="tel"
+                        value={guestCheckoutPhoneNumber}
+                        onChange={(event) => {
+                          setGuestCheckoutPhoneNumber(formatPhoneNumber(event.target.value));
+                          setOrderErrorMessage(null);
+                        }}
+                        disabled={isSubmittingOrder}
+                        placeholder="555-123-4567"
+                        autoComplete="tel"
+                      />
+                    </label>
+                  </>
+                ) : null}
+
                 <label className="checkout-field">
                   <span>Select your location:</span>
-                  <select
-                    value={selectedLocationId}
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
+                  <RoundedSelect
+                    className="checkout-select"
+                    value={selectedLocationId === "" ? "" : String(selectedLocationId)}
+                    onChange={(nextValue) => {
                       setSelectedLocationId(nextValue === "" ? "" : Number(nextValue));
                     }}
+                    options={checkoutLocationOptions}
                     disabled={
                       isLocationsLoading ||
                       isSubmittingOrder ||
                       locations.length === 0
                     }
-                  >
-                    {isLocationsLoading ? (
-                      <option value="">Loading locations...</option>
-                    ) : null}
-                    {!isLocationsLoading && locations.length === 0 ? (
-                      <option value="">No locations available</option>
-                    ) : null}
-                    {!isLocationsLoading
-                      ? locations.map((location) => (
-                          <option key={location.id} value={location.id}>
-                            {location.address}
-                          </option>
-                        ))
-                      : null}
-                  </select>
+                    ariaLabel="Select your location"
+                  />
                 </label>
 
                 {locationsErrorMessage ? (
@@ -2600,19 +2995,16 @@ function App() {
 
                 <label className="checkout-field">
                   <span>Pickup:</span>
-                  <select
+                  <RoundedSelect
+                    className="checkout-select"
                     value={pickupType}
-                    onChange={(event) =>
-                      setPickupType(event.target.value as (typeof pickupOptions)[number])
+                    onChange={(nextValue) =>
+                      setPickupType(nextValue as (typeof pickupOptions)[number])
                     }
+                    options={pickupTypeOptions}
                     disabled={isSubmittingOrder}
-                  >
-                    {pickupOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
+                    ariaLabel="Pickup method"
+                  />
                 </label>
 
                 <div className="checkout-field">
@@ -2661,6 +3053,7 @@ function App() {
                     isSubmittingOrder ||
                     isLocationsLoading ||
                     selectedLocationId === "" ||
+                    (!loggedInUserName && !isGuestCheckoutProfileComplete) ||
                     !paymentMethod ||
                     cartSummaryItems.length === 0
                   }

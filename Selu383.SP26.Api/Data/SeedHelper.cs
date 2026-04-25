@@ -183,13 +183,26 @@ public static class SeedHelper
         }
 
         dataContext.Set<Location>().AddRange(
-            new Location { Name = "Location 1", Address = "123 Main St", TableCount = 10 },
-            new Location { Name = "Location 2", Address = "456 Oak Ave", TableCount = 20 },
-            new Location { Name = "Location 3", Address = "789 Pine Ln", TableCount = 15 }
+            new Location { Name = "Location 1", Address = "110 N Cate St, Hammond, LA 70403", TableCount = 10 },
+            new Location { Name = "Location 2", Address = "72 E 1st St, New York, NY 10003", TableCount = 20 },
+            new Location { Name = "Location 3", Address = "1140 S Carrollton Ave, New Orleans, LA 70118", TableCount = 15 }
         );
+
+
+
+            if (await dataContext.Set<Location>().AnyAsync())
+                {
+                    return;
+                }
+
 
         await dataContext.SaveChangesAsync();
     }
+
+     
+
+
+
 
     private static async Task AddOrderStatuses(DataContext dataContext)
     {
@@ -202,7 +215,8 @@ public static class SeedHelper
             "Ready for Pickup",
             "Client in Drive Through",
             "Client in Store",
-            "Completed"
+            "Completed",
+            "Refunded"
         };
 
         var existingStatuses = await dataContext.Set<OrderStatus>()

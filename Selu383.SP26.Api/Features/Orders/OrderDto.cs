@@ -15,6 +15,7 @@ public class CreateOrderItemDto
     public string Name { get; set; } = string.Empty;
     public int Quantity { get; set; } = 1;
     public decimal UnitPrice { get; set; }
+    public string? SpecialInstructions { get; set; }
 }
 
 public class OrderHistoryDto
@@ -36,6 +37,7 @@ public class OrderItemDto
     public string? ImageUrl { get; set; }
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
+    public string? SpecialInstructions { get; set; }
 }
 
 public class UpdateOrderStatusDto
@@ -54,6 +56,7 @@ public class StaffOrderDto
     public string Location { get; set; } = string.Empty;
     public string PickupMethod { get; set; } = string.Empty;
     public string OrderStatus { get; set; } = string.Empty;
+    public List<string> SpecialInstructions { get; set; } = [];
 }
 
 public class StaffOrderDetailItemDto
@@ -62,6 +65,7 @@ public class StaffOrderDetailItemDto
     public string Name { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
+    public string? SpecialInstructions { get; set; }
 }
 
 public class StaffOrderDetailDto

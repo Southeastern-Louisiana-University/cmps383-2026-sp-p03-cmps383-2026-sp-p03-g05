@@ -33,6 +33,12 @@ public class OrdersController(DataContext dataContext) : ControllerBase
                 Location = x.Location != null ? x.Location.Address : string.Empty,
                 PickupMethod = x.PickupMethod,
                 OrderStatus = x.OrderStatus != null ? x.OrderStatus.Name : string.Empty,
+                SpecialInstructions = x.OrderMenuItems
+                    .Where(y => y.SpecialInstructions != null && y.SpecialInstructions != string.Empty)
+                    .OrderBy(y => y.MenuItem!.ItemName)
+                    .Select(y =>
+                        (y.MenuItem != null ? y.MenuItem.ItemName : "Item") + " - " + y.SpecialInstructions!)
+                    .ToList(),
                 OrderNumber = x.Id
             })
             .ToListAsync();
@@ -66,6 +72,7 @@ public class OrdersController(DataContext dataContext) : ControllerBase
                         Name = y.MenuItem != null ? y.MenuItem.ItemName : string.Empty,
                         Quantity = y.Quantity,
                         UnitPrice = y.MenuItem != null ? y.MenuItem.Price : 0m,
+                        SpecialInstructions = y.SpecialInstructions,
                     })
                     .ToList(),
             })
@@ -97,7 +104,8 @@ public class OrdersController(DataContext dataContext) : ControllerBase
             var activeOrders = orderSnapshots
                 .Where(x =>
                     !string.Equals(x.StatusName, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(x.StatusName, "Completed", StringComparison.OrdinalIgnoreCase))
+                    !string.Equals(x.StatusName, "Completed", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(x.StatusName, "Refunded", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             var inStoreCount = activeOrders
@@ -141,9 +149,33 @@ public class OrdersController(DataContext dataContext) : ControllerBase
         }
 
         var trimmedStatus = dto.Status.Trim();
+        var normalizedStatus = trimmedStatus.ToLowerInvariant();
 
         var statusEntity = await dataContext.Set<OrderStatus>()
-            .FirstOrDefaultAsync(x => x.Name == trimmedStatus);
+            .FirstOrDefaultAsync(x => x.Name.ToLower() == normalizedStatus);
+
+        if (
+            statusEntity == null &&
+            string.Equals(normalizedStatus, "refunded", StringComparison.Ordinal))
+        {
+            statusEntity = new OrderStatus
+            {
+                Name = "Refunded"
+            };
+
+            dataContext.Set<OrderStatus>().Add(statusEntity);
+
+            try
+            {
+                await dataContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                dataContext.Entry(statusEntity).State = EntityState.Detached;
+                statusEntity = await dataContext.Set<OrderStatus>()
+                    .FirstOrDefaultAsync(x => x.Name.ToLower() == normalizedStatus);
+            }
+        }
 
         if (statusEntity == null)
         {
@@ -194,6 +226,7 @@ public class OrdersController(DataContext dataContext) : ControllerBase
                         Quantity = y.Quantity,
                         UnitPrice = y.MenuItem != null ? y.MenuItem.Price : 0m,
                         ImageUrl = null,
+                        SpecialInstructions = y.SpecialInstructions,
                     })
                     .ToList(),
             })
@@ -250,12 +283,23 @@ public class OrdersController(DataContext dataContext) : ControllerBase
         var menuItemById = knownMenuItems.ToDictionary(x => x.Id);
         var menuItemByName = knownMenuItems.ToDictionary(x => x.ItemName, StringComparer.OrdinalIgnoreCase);
 
-        var orderItems = new List<(int MenuItemId, int Quantity)>();
+        var orderItemsByMenuItemId = new Dictionary<int, (int Quantity, string? SpecialInstructions)>();
         foreach (var item in dto.Items)
         {
             if (item.Quantity < 1)
             {
                 return BadRequest("Each order item must have a quantity of at least 1.");
+            }
+
+            var normalizedSpecialInstructions = item.SpecialInstructions?.Trim();
+            if (string.IsNullOrEmpty(normalizedSpecialInstructions))
+            {
+                normalizedSpecialInstructions = null;
+            }
+
+            if (normalizedSpecialInstructions != null && normalizedSpecialInstructions.Length > 300)
+            {
+                return BadRequest("Special instructions must be 300 characters or fewer.");
             }
 
             int menuItemId;
@@ -284,12 +328,34 @@ public class OrdersController(DataContext dataContext) : ControllerBase
                 menuItemId = foundMenuItem.Id;
             }
 
-            orderItems.Add((menuItemId, item.Quantity));
+            if (orderItemsByMenuItemId.TryGetValue(menuItemId, out var existing))
+            {
+                if (!string.Equals(
+                        existing.SpecialInstructions,
+                        normalizedSpecialInstructions,
+                        StringComparison.Ordinal))
+                {
+                    return BadRequest(
+                        "Each menu item can only have one set of special instructions per order.");
+                }
+
+                orderItemsByMenuItemId[menuItemId] =
+                    (existing.Quantity + item.Quantity, existing.SpecialInstructions);
+            }
+            else
+            {
+                orderItemsByMenuItemId[menuItemId] =
+                    (item.Quantity, normalizedSpecialInstructions);
+            }
         }
 
-        var condensedItems = orderItems
-            .GroupBy(x => x.MenuItemId)
-            .Select(x => new { MenuItemId = x.Key, Quantity = x.Sum(y => y.Quantity) })
+        var condensedItems = orderItemsByMenuItemId
+            .Select(x => new
+            {
+                MenuItemId = x.Key,
+                Quantity = x.Value.Quantity,
+                SpecialInstructions = x.Value.SpecialInstructions
+            })
             .ToList();
 
         var order = new Order
@@ -304,6 +370,7 @@ public class OrdersController(DataContext dataContext) : ControllerBase
                 {
                     MenuItemId = x.MenuItemId,
                     Quantity = x.Quantity,
+                    SpecialInstructions = x.SpecialInstructions,
                 })
                 .ToList(),
         };

@@ -10,7 +10,7 @@ import { useAuth } from '@/context/auth-context';
 import { BrandColors } from '@/constants/theme';
 
 export default function LoginScreen() {
-  const { signIn, isLoading, errorMessage, clearError, isAuthenticated } = useAuth();
+  const { signIn, isLoading, errorMessage, clearError, isAuthenticated, pendingGuestRewardPoints } = useAuth();
   const [userName, setUserName] = useState('bob');
   const [password, setPassword] = useState('Password123!');
 
@@ -40,6 +40,11 @@ export default function LoginScreen() {
       <ThemedText style={styles.subtitle}>
         Mobile ordering for fresh coffee on the go.
       </ThemedText>
+      {pendingGuestRewardPoints > 0 ? (
+        <ThemedText style={styles.pendingRewardsText}>
+          Sign in now to claim {pendingGuestRewardPoints} pending reward points.
+        </ThemedText>
+      ) : null}
 
       <View style={styles.form}>
         <TextInput
@@ -127,6 +132,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: BrandColors.text,
     marginBottom: 18,
+  },
+  pendingRewardsText: {
+    textAlign: 'center',
+    color: BrandColors.primary,
+    fontWeight: '700',
+    marginBottom: 14,
+    lineHeight: 19,
   },
   form: {
     gap: 10,

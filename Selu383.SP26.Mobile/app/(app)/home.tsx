@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
-import { HeartOff, RefreshCw, Square, SquareCheck } from 'lucide-react-native';
+import { HeartOff, RefreshCw } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { AddToCartButton } from '@/components/ui/add-to-cart-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/auth-context';
@@ -141,7 +142,7 @@ function formatReservationDateTime(dateValue: Date) {
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { isInCart, toggleCartItem, replaceCart, cartItems } = useCart();
+  const { getItemQuantity, toggleCartItem, replaceCart, cartItems } = useCart();
   const { openCheckout } = useCheckoutFlow();
   const [pridePoints, setPridePoints] = useState(user?.pridePoints ?? 0);
   const completedLevels = getCompletedLevels(pridePoints);
@@ -221,6 +222,7 @@ export default function HomeScreen() {
         name: item.name,
         unitPrice: item.unitPrice,
         image: resolveOrderAgainCartImage(item),
+        specialInstructions: item.specialInstructions,
         quantity: Math.max(0, Math.floor(item.quantity)),
       }))
       .filter((item) => item.key && item.quantity > 0);
@@ -234,6 +236,7 @@ export default function HomeScreen() {
       name: item.name,
       unitPrice: item.unitPrice,
       image: item.image,
+      specialInstructions: item.specialInstructions,
       quantity: item.quantity,
     }));
 
@@ -450,13 +453,21 @@ export default function HomeScreen() {
           </ThemedText>
           <View style={styles.featuredItemsRow}>
             {featuredItems.map((item) => {
-              const isSelected = isInCart(item.name);
+              const quantity = getItemQuantity(item.name);
+              const isSelected = quantity > 0;
               return (
                 <View key={item.name} style={styles.featuredItemCard}>
                   <View style={styles.featuredImageWrap}>
                     <Image source={item.image} style={styles.featuredImage} contentFit="cover" />
-                    <Pressable
-                      style={({ pressed }) => [styles.featuredToggleButton, pressed && styles.featuredToggleButtonPressed]}
+                    {quantity > 0 ? (
+                      <View style={styles.featuredQuantityBadge}>
+                        <ThemedText style={styles.featuredQuantityBadgeText}>x{quantity}</ThemedText>
+                      </View>
+                    ) : null}
+                    <AddToCartButton
+                      style={styles.featuredToggleButton}
+                      pressedStyle={styles.featuredToggleButtonPressed}
+                      isSelected={isSelected}
                       onPress={() =>
                         toggleCartItem({
                           key: item.name,
@@ -465,14 +476,8 @@ export default function HomeScreen() {
                           image: item.image,
                         })
                       }
-                      accessibilityRole="button"
-                      accessibilityLabel={`${isSelected ? 'Remove' : 'Add'} ${item.name} ${isSelected ? 'from' : 'to'} cart`}>
-                      {isSelected ? (
-                        <SquareCheck color={BrandColors.primary} size={20} />
-                      ) : (
-                        <Square color={BrandColors.primary} size={20} />
-                      )}
-                    </Pressable>
+                      accessibilityLabel={`${isSelected ? 'Add another' : 'Add'} ${item.name} to cart`}
+                    />
                   </View>
                   <View style={styles.featuredItemMeta}>
                     <ThemedText style={styles.featuredItemName}>{item.name}</ThemedText>
@@ -707,13 +712,27 @@ const styles = StyleSheet.create({
     right: 6,
     width: 26,
     height: 26,
-    borderRadius: 8,
-    backgroundColor: '#ffffffee',
+  },
+  featuredToggleButtonPressed: {
+    opacity: 0.82,
+  },
+  featuredQuantityBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    minWidth: 26,
+    height: 18,
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    backgroundColor: '#0d8a66',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featuredToggleButtonPressed: {
-    opacity: 0.75,
+  featuredQuantityBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
   },
   featuredItemName: {
     color: BrandColors.darkAccent,

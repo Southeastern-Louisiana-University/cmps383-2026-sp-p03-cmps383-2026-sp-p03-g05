@@ -8,17 +8,20 @@ import {
   type PropsWithChildren,
 } from 'react';
 
-import { authenticationApi, type UserDto } from '@/lib/api';
+import { authenticationApi, ordersApi, usersApi, type CreateOrderDto, type UserDto } from '@/lib/api';
 
 type AuthContextValue = {
   user: UserDto | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   errorMessage: string | null;
+  pendingGuestRewardPoints: number;
   signIn: (userName: string, password: string) => Promise<UserDto>;
   beginDemoSession: (displayName: string) => void;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
+  queuePendingGuestCheckout: (input: { rewardPoints: number; orderDraft?: CreateOrderDto | null }) => void;
+  clearPendingGuestCheckout: () => void;
   clearError: () => void;
 };
 
@@ -28,6 +31,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<UserDto | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pendingGuestRewardPoints, setPendingGuestRewardPoints] = useState(0);
+  const [pendingGuestOrderDrafts, setPendingGuestOrderDrafts] = useState<CreateOrderDto[]>([]);
 
   const refreshSession = useCallback(async () => {
     setIsLoading(true);
@@ -42,6 +47,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
+  const queuePendingGuestCheckout = useCallback((input: { rewardPoints: number; orderDraft?: CreateOrderDto | null }) => {
+    const normalizedPoints = Math.max(0, Math.round(input.rewardPoints));
+    if (normalizedPoints > 0) {
+      setPendingGuestRewardPoints((current) => current + normalizedPoints);
+    }
+
+    if (input.orderDraft) {
+      setPendingGuestOrderDrafts((current) => [...current, input.orderDraft]);
+    }
+  }, []);
+
+  const clearPendingGuestCheckout = useCallback(() => {
+    setPendingGuestRewardPoints(0);
+    setPendingGuestOrderDrafts([]);
+  }, []);
+
   const signIn = useCallback(
     async (userName: string, password: string) => {
       setIsLoading(true);
@@ -52,6 +73,38 @@ export function AuthProvider({ children }: PropsWithChildren) {
           password,
         });
         setUser(loggedInUser);
+
+        const pendingPointsToClaim = pendingGuestRewardPoints;
+        const pendingOrdersToReplay = pendingGuestOrderDrafts;
+
+        if (pendingOrdersToReplay.length > 0 || pendingPointsToClaim > 0) {
+          for (const pendingOrder of pendingOrdersToReplay) {
+            try {
+              await ordersApi.create(pendingOrder);
+            } catch {
+              // Keep auth flow resilient even when replay order fails.
+            }
+          }
+
+          if (pendingPointsToClaim > 0) {
+            try {
+              const rewardsResult = await usersApi.awardRewards(loggedInUser.id, { pointsToAdd: pendingPointsToClaim });
+              setUser((currentUser) =>
+                currentUser
+                  ? {
+                      ...currentUser,
+                      pridePoints: rewardsResult.pridePoints,
+                    }
+                  : currentUser
+              );
+            } catch {
+              // Keep auth flow resilient even when rewards claim fails.
+            }
+          }
+
+          clearPendingGuestCheckout();
+        }
+
         return loggedInUser;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Login failed';
@@ -62,7 +115,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setIsLoading(false);
       }
     },
-    []
+    [clearPendingGuestCheckout, pendingGuestOrderDrafts, pendingGuestRewardPoints]
   );
 
   const beginDemoSession = useCallback((displayName: string) => {
@@ -100,13 +153,28 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isAuthenticated: user !== null,
       isLoading,
       errorMessage,
+      pendingGuestRewardPoints,
       signIn,
       beginDemoSession,
       signOut,
       refreshSession,
+      queuePendingGuestCheckout,
+      clearPendingGuestCheckout,
       clearError,
     }),
-    [user, isLoading, errorMessage, signIn, beginDemoSession, signOut, refreshSession, clearError]
+    [
+      user,
+      isLoading,
+      errorMessage,
+      pendingGuestRewardPoints,
+      signIn,
+      beginDemoSession,
+      signOut,
+      refreshSession,
+      queuePendingGuestCheckout,
+      clearPendingGuestCheckout,
+      clearError,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
