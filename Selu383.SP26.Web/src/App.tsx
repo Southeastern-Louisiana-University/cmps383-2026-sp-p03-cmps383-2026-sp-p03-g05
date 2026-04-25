@@ -1264,7 +1264,6 @@ function App() {
   }, [carouselIndex, carouselMenuItems.length]);
 
   const getCartQuantity = (itemName: string) => cartItemsByName[itemName] ?? 0;
-  const isInCart = (itemName: string) => getCartQuantity(itemName) > 0;
 
   const toggleCartItem = (itemName: string) => {
     setCartItemsByName((previous) => ({
